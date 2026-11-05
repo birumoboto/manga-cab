@@ -50,6 +50,9 @@ const els = {
   fsBtn: $("fsBtn"),
   mokuroInput: $("mokuroInput"),
   pickMokuro: $("pickMokuro"),
+  runOcr: $("runOcr"),
+  langSelect: $("langSelect"),
+  ocrProgress: $("ocrProgress"),
   rail: $("rail"),
   railFill: $("railFill"),
   indicator: $("pageIndicator"),
@@ -523,6 +526,101 @@ els.mokuroInput.addEventListener("change", async (e) => {
     setStatus("Could not attach: " + err.message, "error");
   }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// Running OCR
+// ═══════════════════════════════════════════════════════════════
+
+els.runOcr.addEventListener("click", runOcr);
+
+/**
+ * Start OCR for the open volume and poll until it finishes.
+ */
+async function runOcr() {
+  if (!state.volume) {
+    setOcrStatus("Open a volume first.", "error");
+    return;
+  }
+
+  const lang = els.langSelect.value;
+  els.runOcr.disabled = true;
+  setOcrStatus("Starting OCR…");
+
+  let res;
+  try {
+    res = await fetch(url(`/api/volumes/${state.volume.id}/ocr`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang }),
+    });
+  } catch (err) {
+    els.runOcr.disabled = false;
+    setOcrStatus("Could not reach the server: " + err.message, "error");
+    return;
+  }
+
+  const data = await res.json().catch(() => ({}));
+
+  if (res.status === 409) {
+    // Already running — fall through to polling.
+  } else if (!res.ok) {
+    els.runOcr.disabled = false;
+    setOcrStatus(data.error || "OCR failed to start.", "error");
+    return;
+  }
+
+  pollOcr(state.volume.id);
+}
+
+async function pollOcr(volumeId) {
+  const started = Date.now();
+  // mokuro caches per-page OCR results, so a re-run is much faster.
+  const TIMEOUT = 45 * 60 * 1000;
+
+  while (Date.now() - started < TIMEOUT) {
+    let status;
+    try {
+      status = await (await fetch(url("/api/ocr/status"))).json();
+    } catch {
+      await sleep(1500);
+      continue;
+    }
+
+    const job = status.jobs?.[volumeId];
+    if (job) {
+      if (job.status === "running") {
+        const secs = Math.round((Date.now() - job.startedAt) / 1000);
+        setOcrStatus(`OCR running… ${secs}s elapsed (${job.pages} pages)`);
+      } else if (job.status === "done") {
+        els.runOcr.disabled = false;
+        setOcrStatus(`OCR done — ${job.blocks ?? 0} text blocks found.`, "ok");
+        await loadOcr(volumeId);
+        if (!state.ocr) setOcr(true);
+        else applyOcr();
+        await loadVolumes();
+        return;
+      } else if (job.status === "error") {
+        els.runOcr.disabled = false;
+        setOcrStatus("OCR failed: " + (job.error || "unknown error"), "error");
+        return;
+      }
+    } else {
+      setOcrStatus("Waiting for OCR to start…");
+    }
+
+    await sleep(1500);
+  }
+
+  els.runOcr.disabled = false;
+  setOcrStatus("OCR timed out.", "error");
+}
+
+function setOcrStatus(msg, cls = "") {
+  els.ocrProgress.textContent = msg;
+  els.ocrProgress.className = "ocr-progress" + (cls ? " " + cls : "");
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ═══════════════════════════════════════════════════════════════
 // Fullscreen

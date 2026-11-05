@@ -273,6 +273,34 @@ body { overflow: hidden; }
   border-radius: 3px;
 }
 
+.ocr-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ocr-controls select {
+  flex: 0 0 110px;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+}
+.ocr-controls select:focus { outline: none; border-color: var(--accent-2); }
+.ocr-controls .btn { flex: 1 1 auto; }
+
+.ocr-progress {
+  font-size: 12px;
+  color: var(--fg-dim);
+  min-height: 18px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.ocr-progress.error { color: var(--accent); }
+.ocr-progress.ok { color: #4ade80; }
+
 /* ── Reader ─────────────────────────────────────────────────── */
 .reader {
   flex: 1 1 auto;

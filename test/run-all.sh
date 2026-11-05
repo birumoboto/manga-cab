@@ -17,7 +17,9 @@ run() {
   fi
 }
 
+run "encoding (multipart filenames)"   node test/encoding.test.js
 run "ui (headless chrome)"          node test/ui.verify.js
+run "ocr pipeline (real mokuro)"     node test/ocr.verify.js
 run "mokuro ocr integration"        node test/mokuro.verify.js "${MOKURO_FILE:-/tmp/zhvol.mokuro}"
 run "tailscale (real https)"        node test/tailscale.verify.js
 

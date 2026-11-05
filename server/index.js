@@ -21,6 +21,8 @@ import os from "os";
 import { fileURLToPath } from "url";
 import { VolumeStore, isImageFile, naturalCompare } from "./store.js";
 import { extractZip } from "./unzip.js";
+import { ocrVolume, LANGUAGES, MOKURO_PYTHON } from "./ocr.js";
+import { fixFiles, fixFilename } from "./encoding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -74,7 +76,9 @@ app.post("/api/upload", upload.array("files", 2000), async (req, res) => {
     if (!files.length) {
       return res.status(400).json({ error: "no files uploaded" });
     }
-    const title = req.body?.title || inferTitle(files);
+    // Multipart filenames arrive latin-1 mangled — repair before use.
+    fixFiles(files);
+    const title = fixFilename(req.body?.title) || inferTitle(files);
     const meta = await store.create({ title, files, source: "upload" });
     res.json({ volume: meta });
   } catch (e) {
@@ -90,7 +94,7 @@ app.post("/api/upload/zip", upload.single("archive"), async (req, res) => {
     if (!extracted.length) {
       return res.status(400).json({ error: "archive contained no images" });
     }
-    const title = req.body?.title || stripExt(req.file.originalname);
+    const title = fixFilename(req.body?.title) || fixFilename(stripExt(req.file.originalname));
     const meta = await store.create({
       title,
       files: extracted,
@@ -139,6 +143,78 @@ app.get("/v/:id/pages/:file", async (req, res) => {
   } catch {
     res.status(404).end();
   }
+});
+
+// ── OCR jobs ───────────────────────────────────────────────────
+// OCR takes minutes on a long volume, so it runs in the background and
+// the client polls for status.
+const ocrJobs = new Map();
+
+app.get("/api/ocr/status", (req, res) => {
+  res.json({
+    available: fs.existsSync(MOKURO_PYTHON),
+    languages: LANGUAGES,
+    jobs: Object.fromEntries(ocrJobs),
+  });
+});
+
+app.post("/api/volumes/:id/ocr", async (req, res) => {
+  const id = req.params.id;
+  const lang = String(req.body?.lang || "zh").toLowerCase();
+
+  if (!LANGUAGES.includes(lang)) {
+    return res.status(400).json({ error: `unsupported language: ${lang}` });
+  }
+  if (!fs.existsSync(MOKURO_PYTHON)) {
+    return res.status(503).json({ error: "mokuro is not installed on this machine" });
+  }
+
+  const meta = await store.read(id);
+  if (!meta) return res.status(404).json({ error: "volume not found" });
+  if (!meta.pageCount) return res.status(400).json({ error: "volume has no pages" });
+
+  // One job per volume at a time.
+  const existing = ocrJobs.get(id);
+  if (existing && (existing.status === "running" || existing.status === "queued")) {
+    return res.status(409).json({ error: "OCR already running for this volume", job: existing });
+  }
+
+  const job = {
+    id: `${id}-${Date.now()}`,
+    volumeId: id,
+    lang,
+    status: "running",
+    startedAt: Date.now(),
+    finishedAt: null,
+    error: null,
+    pages: meta.pageCount,
+  };
+  ocrJobs.set(id, job);
+
+  res.status(202).json({ job });
+
+  // Run detached from the request.
+  (async () => {
+    try {
+      const { result } = await ocrVolume(store, id, { lang });
+
+      const updated = await store.read(id);
+      updated.mokuro = result;
+      await fsp.writeFile(
+        path.join(store.volumeDir(id), "volume.json"),
+        JSON.stringify(updated, null, 2),
+        "utf8"
+      );
+
+      job.status = "done";
+      job.finishedAt = Date.now();
+      job.blocks = (result.pages || []).reduce((n, p) => n + (p.blocks?.length || 0), 0);
+    } catch (err) {
+      job.status = "error";
+      job.error = String(err.message || err);
+      job.finishedAt = Date.now();
+    }
+  })();
 });
 
 // ── Serve the OCR JSON ─────────────────────────────────────────

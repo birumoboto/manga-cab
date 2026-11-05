@@ -69,11 +69,21 @@
 
       <section class="lib-section">
         <h3>OCR TEXT LAYER</h3>
-        <p class="lib-hint">Attach a <code>.mokuro</code> file (from mokuro) to make
-          the pages&rsquo; text selectable. Toggle it with the <strong>O</strong> key
-          or the button in the top bar.</p>
+        <p class="lib-hint">Run OCR over the pages to make the dialogue
+          <em>selectable</em>. Toggle the text layer with the <strong>O</strong>
+          key or the button in the top bar.</p>
+        <div class="ocr-controls">
+          <select id="langSelect" aria-label="Source language">
+            <option value="zh">Chinese</option>
+            <option value="ja">Japanese</option>
+          </select>
+          <button id="runOcr" class="btn btn-primary">RUN OCR</button>
+        </div>
+        <div id="ocrProgress" class="ocr-progress" role="status" aria-live="polite"></div>
+        <div class="btn-row">
+          <button id="pickMokuro" class="btn">ATTACH .MOKURO</button>
+        </div>
         <input id="mokuroInput" type="file" accept=".mokuro,application/json" hidden>
-        <button id="pickMokuro" class="btn">ATTACH .MOKURO</button>
       </section>
 
       <section class="lib-section">
