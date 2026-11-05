@@ -182,10 +182,12 @@ async function main() {
     // is painted on white and can be read.
     const zoneState = await ev(`(() => {
       const rev = Array.from(document.querySelectorAll('.ocr-box.revealed'));
+      // The white panel is painted by the ::before pseudo-element of the
+      // LINE, not the block.
+      const line = rev[0] && rev[0].querySelector('.ocr-line');
       return {
         count: rev.length,
-        // The white panel is painted by the ::before pseudo-element.
-        bg: rev[0] ? getComputedStyle(rev[0], '::before').backgroundColor : null,
+        bg: line ? getComputedStyle(line, '::before').backgroundColor : null,
         text: rev[0] ? rev[0].textContent.slice(0, 30) : null,
       };
     })()`);

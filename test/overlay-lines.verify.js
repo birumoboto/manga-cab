@@ -233,13 +233,35 @@ async function main() {
         if (!line) continue;
         const lr = line.getBoundingClientRect();
         // Expected centre in viewport coords: image + quad offset.
+        // The overlay is fitted to the artwork's LETTERING, which is
+        // what the ink measurement finds — the detected quad is bigger
+        // than the text it holds (it includes the speech bubble's
+        // edges). So compare against the lettering, not the quad.
+        const ink = window.MANGA_INK.measureInk(img, quad, !!blk.vertical);
+        if (!ink) continue;
+        const chars = Array.from(line.querySelectorAll('.ocr-char'));
+        if (!chars.length) continue;
+        const crs = chars.map(c => c.getBoundingClientRect());
+        const cx0 = Math.min(...crs.map(r => r.left));
+        const cy0 = Math.min(...crs.map(r => r.top));
+
+        // The rendered box is the EM BOX; the ink sits inside it with a
+        // side bearing and below the ascent. Work out where the ink
+        // actually is.
+        const fm = window.MANGA_INK.measureFontMetrics();
+        const fs = parseFloat(getComputedStyle(chars[0]).fontSize);
+        const vertical = !!blk.vertical;
+        const inkLeft = cx0 + (vertical ? fm.inkOffsetXRight : fm.inkOffsetX) * fs;
+        const inkTop = cy0 + (vertical ? 0 : fm.inkOffsetY) * fs;
+
         const imgRect = img.getBoundingClientRect();
         const W = ${JSON.stringify(ocr.pages.map((p) => p.img_width))}[idx];
-        const expX = imgRect.left + (qcx / W) * imgRect.width;
-        const expY = imgRect.top + (qcy / ${JSON.stringify(ocr.pages.map((p) => p.img_height))}[idx]) * imgRect.height;
+        const qx0 = Math.min(...xs), qy0 = Math.min(...ys);
+        const expX = imgRect.left + ((qx0 + ink.offset.x) / W) * imgRect.width;
+        const expY = imgRect.top + ((qy0 + ink.offset.y) / ${JSON.stringify(ocr.pages.map((p) => p.img_height))}[idx]) * imgRect.height;
         out.push({
-          dx: Math.round(lr.left + lr.width/2 - expX),
-          dy: Math.round(lr.top + lr.height/2 - expY),
+          dx: Math.round(inkLeft - expX),
+          dy: Math.round(inkTop - expY),
         });
       }
     }
@@ -249,10 +271,10 @@ async function main() {
   if (posCheck.length) {
     const maxDx = Math.max(...posCheck.map((p) => Math.abs(p.dx)));
     const maxDy = Math.max(...posCheck.map((p) => Math.abs(p.dy)));
-    check("each line lands at its detected position",
+    check("each line lands on the artwork's lettering",
       maxDx <= 12 && maxDy <= 12, `max offset dx=${maxDx}px dy=${maxDy}px over ${posCheck.length} lines`);
   } else {
-    check("each line lands at its detected position", false, "no samples");
+    check("each line lands on the artwork's lettering", false, "no samples");
   }
 
   console.log("");

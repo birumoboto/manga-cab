@@ -7,6 +7,22 @@
 
 const $ = (id) => document.getElementById(id);
 
+// The artwork's real lettering geometry, measured from the page images.
+// See public/ink.js for why mokuro's font_size is not enough.
+//
+// Kept in one namespace object: both scripts are classic <script> tags,
+// so they share the global scope, and destructuring into bare names
+// would redeclare ink.js's own bindings.
+const INK = window.MANGA_INK;
+
+// The font's own metrics, measured by rasterising it. This is what
+// converts the artwork's ink size into a font size, and it is measured
+// rather than hardcoded so a font substitution cannot throw the
+// calibration off.
+const FONT = INK.measureFontMetrics
+  ? INK.measureFontMetrics()
+  : INK.BROWSER;
+
 // The app may be mounted under a path prefix (e.g. "/manga" when several
 // apps share one Tailscale Serve hostname). Resolve every API and asset
 // URL against that prefix so relative deployment works unchanged.
@@ -89,6 +105,12 @@ const state = {
 // inside an em box that is taller than its ink, so rendering at exactly
 // font_size makes the overlay text look noticeably larger than the
 // artwork. This factor trims it to match. 1.0 = no correction.
+//
+// This is the FALLBACK. The real size comes from measuring the artwork's
+// ink directly (public/ink.js) — mokuro's font_size is the QUAD's size,
+// not the glyph's, and the quad also contains the speech bubble's edges
+// and the page around the lettering, so using it makes the text about
+// 40% too big.
 //
 // Tuned against real Chinese webtoon pages: the overlay line box measured
 // ~1.29x the artwork's line height at 1.0, so ~0.78 lands them together.
@@ -423,10 +445,48 @@ function clearOcr() {
   }
 }
 
+/**
+ * Measure the artwork's ink for every detected line on a page.
+ *
+ * The measurement is done on the page image the reader is already
+ * showing, so it costs one canvas read per line and needs no extra
+ * decoding on the server. The result is cached on the page element:
+ * the image does not change, so re-rendering the overlay (when the
+ * display mode changes) must not re-measure.
+ *
+ * Returns a Map keyed by "block:line" with the measurement, or an empty
+ * map when the image is not ready or cannot be read.
+ */
+function getInkCache(wrap, img, page) {
+  // The cache lives on the element as a JS property. A dataset attribute
+  // would stringify the Map, and the second render would then get
+  // "[object Map]" instead of the measurements.
+  if (wrap._inkCache) return wrap._inkCache;
+  const cache = new Map();
+  wrap._inkCache = cache;
+
+  if (!page || !page.blocks || !img.naturalWidth) return cache;
+
+  for (let bi = 0; bi < page.blocks.length; bi++) {
+    const blk = page.blocks[bi];
+    const coords = blk.lines_coords || [];
+    for (let li = 0; li < coords.length; li++) {
+      const m = INK.measureInk(img, coords[li], !!blk.vertical);
+      if (m) cache.set(`${bi}:${li}`, m);
+    }
+  }
+  return cache;
+}
+/**
+ * Render the OCR overlay for every page.
+ *
+ * Each page renders its own overlay when its image has decoded — the
+ * ink can only be measured from pixels that have actually loaded, and
+ * the page images load lazily.
+ */
 function applyOcr() {
   if (!state.ocr || !state.ocrData) return;
   const pages = state.ocrData.pages || [];
-
   // The .mokuro page order matches the uploaded order when the volume was
   // produced by mokuro itself. If the lengths differ, match by image name.
   const byName = new Map();
@@ -434,24 +494,51 @@ function applyOcr() {
 
   for (const wrap of els.pages.children) {
     wrap.classList.add("ocr-active");
-    const layer = wrap.querySelector(".ocr-layer");
-    if (!layer) continue;
-    layer.classList.add("on");
-    // The display mode changes how the text is painted and whether the
-    // layer takes pointer events.
-    layer.classList.toggle("mode-read", state.ocrMode === "read");
-    layer.classList.toggle("mode-tap", state.ocrMode === "tap");
-    layer.innerHTML = "";
-
     const page = byName.get(wrap.dataset.file) || pages[Number(wrap.dataset.index)];
     if (!page || !page.blocks) continue;
 
     const img = wrap.querySelector("img");
-    const W = page.img_width || img.naturalWidth || 1;
-    const H = page.img_height || img.naturalHeight || 1;
     const pageIndex = Number(wrap.dataset.index);
 
-    for (let blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
+    if (img.complete && img.naturalWidth) {
+      renderOcrPage(wrap, page, pageIndex);
+    } else {
+      // The image has not decoded yet — render when it does, so the ink
+      // can be measured from the real pixels.
+      img.addEventListener("load", () => {
+        if (state.ocr && state.ocrData) renderOcrPage(wrap, page, pageIndex);
+      }, { once: true });
+    }
+  }
+}
+
+/**
+ * Render the OCR overlay for ONE page.
+ *
+ * Split out from applyOcr() because the page images load lazily: the
+ * ink can only be measured once the image has actually decoded, so each
+ * page renders its own overlay when its image arrives.
+ */
+function renderOcrPage(wrap, page, pageIndex) {
+  const layer = wrap.querySelector(".ocr-layer");
+  if (!layer || !page || !page.blocks) return;
+
+  layer.classList.add("on");
+  // The display mode changes how the text is painted and whether the
+  // layer takes pointer events.
+  layer.classList.toggle("mode-read", state.ocrMode === "read");
+  layer.classList.toggle("mode-tap", state.ocrMode === "tap");
+  layer.innerHTML = "";
+
+  const img = wrap.querySelector("img");
+  const W = page.img_width || img.naturalWidth || 1;
+  const H = page.img_height || img.naturalHeight || 1;
+
+  // The artwork's real lettering geometry, measured from the pixels
+  // the reader is showing.
+  const inkCache = getInkCache(wrap, img, page);
+
+  for (let blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
       const block = page.blocks[blockIndex];
       const [x0, y0, x1, y1] = block.box || [];
       if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) continue;
@@ -514,6 +601,9 @@ function applyOcr() {
         // Position from the detected line quad, relative to the block box.
         const quad = coords[i];
         let quadW = 0, quadH = 0;
+        // The quad's origin in IMAGE pixels, so the ink's offset (which
+        // is relative to the quad) can be turned into a position.
+        let quadX0 = 0, quadY0 = 0;
         if (quad && bw > 0 && bh > 0) {
           const xs = quad.map((p) => p[0]);
           const ys = quad.map((p) => p[1]);
@@ -521,6 +611,8 @@ function applyOcr() {
           const ly0 = Math.min(...ys), ly1 = Math.max(...ys);
           quadW = lx1 - lx0;
           quadH = ly1 - ly0;
+          quadX0 = lx0;
+          quadY0 = ly0;
           line.style.left = ((lx0 - bx0) / bw) * 100 + "%";
           line.style.top = ((ly0 - by0) / bh) * 100 + "%";
           line.style.width = (quadW / bw) * 100 + "%";
@@ -543,70 +635,90 @@ function applyOcr() {
           }
         }
 
-        // ── Fit the text to its quad ────────────────────────────
+        // ── Fit the text to the artwork ────────────────────────
         //
-        // The artwork's CJK lettering is CONDENSED: the real ink is
-        // 0.58-0.83 as wide as it is tall, while a browser lays out
-        // square CJK glyphs. So the natural width of the text is far
-        // wider than the detected quad, and the text spills out of it,
-        // overlaps its neighbours, and bleeds past the white panel.
+        // mokuro's font_size is the QUAD's size, not the glyph's, and
+        // the quad also contains the speech bubble's edges and the page
+        // around the lettering. Using it makes the overlay ~40% too big
+        // — the "stretched" look.
         //
-        // The fix is to fit the text to the quad it was detected in:
+        // So the size comes from measuring the INK: the artwork's real
+        // glyph height (the cross-axis extent of the lettering inside
+        // the quad). The browser draws a CJK glyph's ink at 0.85 of its
+        // font size, so:
         //
-        //   horizontal line — the glyph height is the quad's HEIGHT,
-        //                    and the advance width is condensed to fit
-        //   vertical line   — the glyph height is the quad's WIDTH,
-        //                    and the advance down the column is
-        //                    condensed to fit
+        //     font-size = inkHeight / 0.85
         //
-        // Both factors are per line, because each line has its own quad.
-        // The size is expressed in cqw (the layer's width, which is the
-        // image's display width), so it tracks the artwork at any size.
+        // The advance comes from the same measurement: the artwork's
+        // typical distance between characters. The browser's natural
+        // advance is 0.9521 em, so the condense factor is:
         //
-        // The CONDENSE is a transform, so it does not change the line's
-        // layout box — the line keeps the quad's width, and the glyphs
-        // inside it are squeezed to fit. That is what we want: the box
-        // stays where the artwork is, and only the text is condensed.
+        //     condense = artworkAdvance / (font-size * 0.9521)
+        //
+        // That condense is applied as a TRANSFORM, not as flex-shrink.
+        // Flex-shrink squashes the glyph ink inside each character
+        // without moving its outline, which is exactly what makes
+        // letters overlap: the ink is wider than the slot it is
+        // squeezed into. A transform scales the glyph as a whole, so
+        // the letters stay apart and just get narrower.
+        //
+        // Both factors are per line, because each line has its own quad
+        // and its own lettering. The size is expressed in cqw (the
+        // layer's width, which is the image's display width), so it
+        // tracks the artwork at any screen size.
         const nChars = Math.max(1, spans.length);
         const vertical = !!block.vertical;
-        if (quadW > 0 && quadH > 0) {
-          const fs = block.font_size || 16;
+        const ink = inkCache.get(`${blockIndex}:${i}`);
 
+        if (quadW > 0 && quadH > 0) {
           // The cross-axis extent of the glyphs: the line's height when
           // the text runs horizontally, its width when it runs
-          // vertically.
-          const glyphBox = vertical ? quadW : quadH;
+          // vertically. The measured ink is the truth; the quad is the
+          // fallback when the artwork could not be measured.
+          const glyphBox = ink
+            ? ink.crossExtent
+            : (vertical ? quadW : quadH);
 
-          // The along-axis extent the text has to fit into.
-          const alongBox = vertical ? quadH : quadW;
+          // The along-axis extent the text has to fit into. The measured
+          // ink says where the lettering actually ends; the quad says
+          // where the detector thought it was. Prefer the ink, but never
+          // let the text spill out of the quad.
+          const inkAlong = ink ? ink.alongExtent : 0;
+          const alongBox = vertical
+            ? Math.min(quadH, inkAlong || quadH)
+            : Math.min(quadW, inkAlong || quadW);
 
-          // The font size whose EM BOX matches the cross-axis extent.
-          // The em box is what getBoundingClientRect() reports for a
-          // text run, so matching it to the quad is what keeps the
-          // glyphs inside the quad — and the quad is the artwork's own
-          // ink box, so this lines the overlay up with the lettering.
-          const fitSize = glyphBox;
+          // The font size whose INK matches the artwork's glyph height.
+          //
+          // The browser draws a glyph's ink at a fixed fraction of the
+          // font size — measured from the font itself, so a font
+          // substitution cannot throw the calibration off.
+          const fontSize = glyphBox / FONT.inkHeight;
 
-          // The size mokuro reported is the ink height. For a vertical
-          // line that is the glyph's width across the column, so it
-          // already matches the cross axis — but a vertical line is
-          // often TALLER than one character, so the font can be larger
-          // than mokuro's estimate. Allow it to grow to fill the quad.
-          const sizeScale = vertical
-            ? Math.max(1, fitSize / fs)
-            : Math.min(1, fitSize / fs);
+          // The advance the artwork uses between characters.
+          //
+          // The ink segmentation is not reliable enough to count the
+          // characters — a line of thin white-on-black strokes breaks
+          // into a few wide runs, not one per glyph. But the OCR text
+          // gives the character count exactly, so the advance is the
+          // ink's along-axis extent divided by that count.
+          //
+          // For a vertical column the advance down the column is the
+          // glyph's own size: CJK glyphs are square, so a column's
+          // character advances by its width.
+          const artworkAdvance = vertical
+            ? glyphBox
+            : (nChars > 0 && ink ? ink.alongExtent / nChars : glyphBox);
 
-          // Condense along the text's own axis so the text fits.
-          // The natural advance is one em per CJK character.
-          const naturalAdvance = fs * sizeScale;
-          const targetAdvance = alongBox / nChars;
-          const condense = Math.min(1, targetAdvance / naturalAdvance);
+          // The natural advance at this font size, and the squeeze that
+          // brings it down to the artwork's.
+          const naturalAdvance = fontSize * FONT.advance;
+          const condense = Math.min(1, artworkAdvance / naturalAdvance);
 
           // The size is a fraction of the layer's width (cqw), so the
           // line scales with the artwork at any screen size.
-          const baseSize = (fs / W) * 100;          // percent of the layer
-          line.style.setProperty("--ocr-line-size",
-            (baseSize * sizeScale).toFixed(4) + "cqw");
+          const baseSize = (fontSize / W) * 100;   // percent of the layer
+          line.style.setProperty("--ocr-line-size", baseSize.toFixed(4) + "cqw");
           line.style.setProperty("--ocr-condense", condense.toFixed(4));
 
           // The line's layout box must be the quad's size so the
@@ -624,6 +736,53 @@ function applyOcr() {
             line.style.width = (quadW / condense / bw) * 100 + "%";
             line.style.height = (quadH / bh) * 100 + "%";
           }
+
+          // ── Place the text on the artwork's lettering ──────────
+          //
+          // The quad is where the DETECTOR thought the text was; the
+          // ink is where the lettering actually is. They differ — the
+          // detector's quad includes the speech bubble's edges, so the
+          // lettering sits off-centre inside it.
+          //
+          // On top of that, the browser positions a character by its EM
+          // BOX, and the ink sits inside that box with a left side
+          // bearing and below the ascent. So the em box has to be moved
+          // back by the ink's offset to put the INK on the artwork's
+          // lettering.
+          //
+          // Everything here is in image pixels; the percentages are
+          // relative to the BLOCK box, which is what the line is
+          // positioned within.
+          if (ink && quadW > 0) {
+            // Where the lettering starts, in image pixels.
+            const inkX = quadX0 + ink.offset.x;
+            const inkY = quadY0 + ink.offset.y;
+
+            // How far the ink sits inside the em box, in image pixels.
+            //
+            // In HORIZONTAL writing the ink is offset right (the left
+            // side bearing) and down (below the ascent).
+            //
+            // In VERTICAL writing the roles swap: the glyph's TOP side
+            // bearing becomes the RIGHT one, so the cross axis (the
+            // glyph's width) is offset by the RIGHT bearing. Down the
+            // column there is no offset at all — that axis is the
+            // advance, not the ascent.
+            const bearX = vertical
+              ? FONT.inkOffsetXRight * fontSize
+              : FONT.inkOffsetX * fontSize;
+            const bearY = vertical ? 0 : FONT.inkOffsetY * fontSize;
+
+            // The cross axis: for horizontal text the lettering's top
+            // edge is what matters; for vertical text its left edge.
+            if (vertical) {
+              line.style.left = ((inkX - bearX - bx0) / bw) * 100 + "%";
+              line.style.width = (glyphBox / bw) * 100 + "%";
+            } else {
+              line.style.left = ((inkX - bearX - bx0) / bw) * 100 + "%";
+              line.style.top = ((inkY - bearY - by0) / bh) * 100 + "%";
+            }
+          }
         }
 
         box.appendChild(line);
@@ -637,7 +796,6 @@ function applyOcr() {
         continue;
       }
       layer.appendChild(box);
-    }
   }
 }
 
@@ -764,13 +922,19 @@ function zoneAtPoint(x, y) {
  *
  * Only one zone is revealed at a time — revealing every zone at once
  * would cover the artwork in white boxes.
+ *
+ * The white panel is drawn on each LINE of the block, not on the block
+ * itself: a block can hold several lines with different quads, and the
+ * panel has to hug the text. Drawing it on the line also means the
+ * white always covers the characters exactly.
  */
 function revealZone(boxEl) {
-  for (const b of document.querySelectorAll(".ocr-box.revealed")) {
-    b.classList.remove("revealed");
-  }
+  collapseZones();
   if (!boxEl) return null;
   boxEl.classList.add("revealed");
+  for (const line of boxEl.querySelectorAll(".ocr-line")) {
+    line.classList.add("revealed");
+  }
   return boxEl;
 }
 
@@ -778,6 +942,9 @@ function revealZone(boxEl) {
 function collapseZones() {
   for (const b of document.querySelectorAll(".ocr-box.revealed")) {
     b.classList.remove("revealed");
+  }
+  for (const l of document.querySelectorAll(".ocr-line.revealed")) {
+    l.classList.remove("revealed");
   }
 }
 

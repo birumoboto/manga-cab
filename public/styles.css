@@ -500,17 +500,23 @@ body { overflow: hidden; }
   align-items: center;
   overflow: visible;
 }
-
 /* ── Fitting the text to its quad ────────────────────────────────
    The artwork's CJK lettering is condensed — the real ink is 0.58-0.83
    as wide as it is tall — while the browser lays out square CJK
    glyphs. Without this the text is far too wide, spills out of its
    quad, overlaps its neighbours, and bleeds past the white panel.
 
-   --ocr-line-size  the font size that fits the quad's height, in cqw
+   --ocr-line-size  the font size that fits the quad, in cqw
                     (the layer's width = the image's display width)
    --ocr-condense   the squeeze that fits the quad's width
-*/
+
+   The characters must NOT be allowed to shrink. A flex container
+   squeezes its items when the content is wider than the box, and that
+   squashes the GLYPH INK inside each character — the letters then
+   overlap each other, because the ink is wider than the slot it is
+   squeezed into. `flex: 0 0 auto` stops that; the condense transform
+   below does the squeezing instead, and it scales the glyph as a whole
+   rather than deforming it. */
 .ocr-line.placed {
   font-size: var(--ocr-line-size, var(--ocr-size, 16px));
   /* The line box must be the glyph's em box, not 1.2em — otherwise the
@@ -521,30 +527,36 @@ body { overflow: hidden; }
 }
 .ocr-line.placed .ocr-char {
   font-size: inherit;
+  /* Never shrink a character: the flex box would squash the glyph's
+     ink and the letters would overlap. */
+  flex: 0 0 auto;
 }
 
 /* Vertical text: the glyphs stack downward, so the squeeze applies to
    the Y axis and the origin is the top of the line.
 
    The line is a flex row by default. In vertical writing mode the
-   writing-mode already stacks the characters down the column, so the
-   flex direction must be ROW (not column) — otherwise the characters
-   would be laid out as flex items down the column AND down the column
-   again by the writing mode. */
+   writing mode already stacks the characters down the column, so the
+   flex direction must stay ROW — with `column` the characters would be
+   laid out as flex items down the column AND stacked down the column
+   again by the writing mode.
+
+   The characters must not shrink here either: flex-shrink squashes the
+   glyph ink, and in a vertical column that pushes the characters into
+   each other. */
 .ocr-box.vertical .ocr-line.placed {
   transform: scaleY(var(--ocr-condense, 1));
   transform-origin: center top;
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  /* In vertical writing mode the line's inline axis runs downward, so
-     the text starts at the top of the column. */
   align-content: flex-start;
 }
 .ocr-box.vertical .ocr-line.placed .ocr-char {
   /* Each character is its own em box in vertical writing mode, so the
      advance down the column is the character's height. */
   display: inline-block;
+  flex: 0 0 auto;
 }
 
 /* Character-level highlight for tap-to-select. Each character is its own
@@ -569,17 +581,29 @@ body { overflow: hidden; }
    on the box itself, so revealing a zone does NOT move the text. The
    characters stay exactly where they were in the artwork.
 
-   The panel is sized to the LINE boxes, not the block box — a block
-   can hold several lines with different quads, and the panel should
-   hug the text rather than the whole block. */
+   The white panel is drawn on the LINE, not the block: a block can
+   hold several lines with different quads, and the panel should hug the
+   text rather than the whole block.
+
+   The panel is sized to the TEXT, not the line's box: the line's box
+   is the detected quad (scaled by the condense), while the text sits
+   on the artwork's lettering — which can be slightly wider.
+
+   The vertical padding has to clear the EM BOX, not just the ink: the
+   em box carries the ascent and descent, so the glyphs' boxes stick
+   out above and below the ink by about 0.17em. Without that the
+   characters poke out of the bottom of the white panel.
+
+   The panel uses a NEGATIVE z-index and the line has no background of
+   its own, so the white sits behind the glyphs. */
 .ocr-box.revealed {
   color: #111118;
   -webkit-text-fill-color: #111118;
 }
-.ocr-box.revealed::before {
+.ocr-line.revealed::before {
   content: "";
   position: absolute;
-  inset: -3px -6px;
+  inset: -12px -10px;
   background: #ffffff;
   border-radius: 4px;
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);

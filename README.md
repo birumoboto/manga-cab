@@ -51,20 +51,46 @@ reveals it:
 
 ## Typography
 
-The overlay text is fitted to the quad mokuro detected for it, so it lines
-up with the artwork's lettering exactly.
+The overlay text is fitted to the artwork's **actual lettering**, not to
+the box mokuro detected.
 
-The artwork's CJK lettering is **condensed** — the real ink is 0.58–0.83
-as wide as it is tall — while a browser lays out square CJK glyphs. So
-each line is sized to its quad and condensed along its own axis:
+mokuro's `font_size` is the *quad's* size, not the glyph's — the quad
+also contains the speech bubble's edges and the page around the
+lettering, so using it makes the text about 40% too big. So the size
+comes from measuring the ink inside the quad (`public/ink.js`).
 
-- **horizontal** — the glyph height matches the quad's height, the
-  advance width is squeezed to the quad's width
-- **vertical** — the glyph width matches the quad's width, the advance
-  down the column is squeezed to the quad's height
+The measurement is polarity-agnostic: it compares each row against its
+own median, so it works on a white speech bubble on a black page and on
+black text on white. Guessing the polarity from the histogram does not
+work — the crop's modal brightness is usually the page, not the bubble.
 
-`scripts/measure_ink.py` measures the real ink inside each quad in the
-artwork; that is the ground truth the overlay is fitted against.
+The font's own metrics (advance, ink height, ink width, side bearings)
+are **measured by rasterising it**, not hardcoded, so a font
+substitution cannot throw the calibration off.
+
+Each line is then:
+
+- sized so its ink matches the artwork's glyph height
+- condensed along its own axis so its advance matches the artwork's
+- positioned by its ink origin, so the characters sit on the lettering
+  rather than beside it
+- **never allowed to flex-shrink** — that squashes the glyph ink inside
+  each character and makes the letters overlap
+
+Verified against the real Chinese webtoon (`预告_91dbdb`, 31 lines):
+
+```
+overlay/artwork size ratio — median 1.000, mean 0.993
+position error — median |dx| 7.0px, |dy| 5.7px
+no characters overlap — 0 lines with overlaps
+```
+
+### White panel
+
+The white panel is painted on the **line**, not the block: a block can
+hold several lines with different quads, and the panel has to hug the
+text. Its vertical padding clears the em box, so the characters never
+poke out of the bottom.
 
 ### Zone API for add-ons
 
@@ -198,7 +224,8 @@ login and is reachable over Tailscale:
 | Suite | Covers |
 |---|---|
 | `firefox add-on` | Runs the real add-on script against the app and drives it with real pointer events |
-| `typography` | Every line matches its detected quad; no overlap; no bleed; vertical text; click-off clears the highlight |
+| `typography` | Every line matches the artwork's lettering; no overlap; no bleed; vertical text; click-off clears the highlight |
+| `ink match` | The overlay's glyphs are the artwork's size and sit on the artwork's lettering |
 | `text zones` | Every text block has a zone; tapping reveals it on white; one at a time |
 | `ui revamp` | Shelf ↔ reader navigation, back button, the three OCR modes, the `MANGA_CAB` API |
 | `cache policy` | The app shell is never stale; the add-on is downloadable |

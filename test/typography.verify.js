@@ -126,13 +126,18 @@ async function main() {
   await sleep(1800);
 
   // ── 1 + 2 + 3: geometry of every rendered line ─────────────
+  //
+  // The reference is the ARTWORK's lettering, not the detected quad:
+  // the quad also contains the speech bubble's edges, so it is bigger
+  // than the text it holds. The ink measurement finds the lettering.
   const geo = await ev(`(() => {
     const out = [];
     for (const wrap of document.querySelectorAll('.page')) {
       const pageIdx = Number(wrap.dataset.index);
       const img = wrap.querySelector('img');
+      if (!img || !img.naturalWidth) continue;
       const imgRect = img.getBoundingClientRect();
-      const imgW = img.naturalWidth || 1, imgH = img.naturalHeight || 1;
+      const imgW = img.naturalWidth, imgH = img.naturalHeight;
       const scale = imgRect.width / imgW;
 
       for (const b of wrap.querySelectorAll('.ocr-box')) {
@@ -146,13 +151,40 @@ async function main() {
           const cy0 = crs.length ? Math.min(...crs.map(r => r.top)) : 0;
           const cx1 = crs.length ? Math.max(...crs.map(r => r.right)) : 0;
           const cy1 = crs.length ? Math.max(...crs.map(r => r.bottom)) : 0;
+
+          // The artwork's lettering, in display pixels.
+          const li = Number(l.dataset.ocrLine);
+          const page = window.state.ocrData.pages.find(p => p.img_path && p.img_path.endsWith(wrap.dataset.file));
+          const blk = page && page.blocks[blkIdx];
+          let art = null;
+          if (blk && blk.lines_coords[li]) {
+            const m = window.MANGA_INK.measureInk(img, blk.lines_coords[li], !!blk.vertical);
+            if (m) {
+              const q = blk.lines_coords[li];
+              const xs = q.map(p=>p[0]), ys = q.map(p=>p[1]);
+              const qx0 = Math.min(...xs), qy0 = Math.min(...ys);
+              art = {
+                x: imgRect.left + (qx0 + m.offset.x) * scale,
+                y: imgRect.top + (qy0 + m.offset.y) * scale,
+                cross: m.crossExtent * scale,
+                along: m.alongExtent * scale,
+              };
+            }
+          }
+
+          const br = b.getBoundingClientRect();
           out.push({
             page: pageIdx, block: blkIdx,
-            line: Number(l.dataset.ocrLine),
+            line: li,
             vertical,
             text: l.textContent,
+            fontSize: getComputedStyle(chars[0] || l).fontSize,
             lineBox: { x: lr.left, y: lr.top, w: lr.width, h: lr.height },
             charBox: { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 },
+            // The white panel is painted on the LINE, with an inset.
+            panel: { x: lr.left, y: lr.top, w: lr.width, h: lr.height,
+                     padX: 10, padY: 12 },
+            art,
             // Where the line box sits relative to the image.
             imgLeft: imgRect.left, imgTop: imgRect.top, scale,
             imgW, imgH,
@@ -183,39 +215,91 @@ async function main() {
   };
 
   let alignWorst = 0, alignWorstLine = "";
-  let bleed = [], overlaps = [];
+  let bleed = [], overlaps = [], misaligned = [];
+  let sizeWorst = 0, sizeWorstLine = "";
+  const fontMetrics = await ev("window.MANGA_INK.measureFontMetrics()");
+
   for (const g of geo) {
-    const q = quadFor(g);
-    if (!q) continue;
-    const s = g.scale;
-    // The quad's display size.
-    const qw = q.w * s, qh = q.h * s;
+    if (!g.art) continue;
 
-    // ── ALIGNMENT: the line box must match the quad's size.
-    const dw = Math.abs(g.lineBox.w - qw);
-    const dh = Math.abs(g.lineBox.h - qh);
-    if (dw > alignWorst) { alignWorst = dw; alignWorstLine = g.text.slice(0, 14); }
-
-    // ── BLEED: the characters must stay inside the quad.
-    // For a horizontal line the text runs along X; for a vertical one
-    // it runs down Y.
-    const along = q.vertical ? g.charBox.h : g.charBox.w;
-    const alongLimit = q.vertical ? qh : qw;
-    const across = q.vertical ? g.charBox.w : g.charBox.h;
-    const acrossLimit = q.vertical ? qw : qh;
-    if (along > alongLimit + 2 || across > acrossLimit + 2) {
-      bleed.push({
-        text: g.text.slice(0, 14), vertical: q.vertical,
-        along: Math.round(along), alongLimit: Math.round(alongLimit),
-        across: Math.round(across), acrossLimit: Math.round(acrossLimit),
+    // ── ALIGNMENT: the text's INK must start at the artwork's
+    // lettering.
+    //
+    // The rendered charBox is the EM BOX, and the ink sits inside it
+    // with a left side bearing and below the ascent — so the ink's
+    // origin has to be worked out, not the box's.
+    //
+    // The tolerance scales with the lettering's size: a 10px offset on
+    // a 20px line is badly off, but on a 60px line it is a tenth of a
+    // character and invisible.
+    //
+    // It also has to allow for hand-lettered artwork, where the
+    // baseline and the glyph sizes vary from character to character.
+    // The ink measurement finds the top of the TALLEST stroke, so a
+    // line whose characters vary in height sits a few pixels off the
+    // measurement — and on a line of small characters that is a
+    // noticeable fraction of the glyph's size.
+    const fs = parseFloat(g.fontSize);
+    // The ink's origin, from the rendered em box. In vertical writing
+    // the cross axis is the glyph's width, so the RIGHT bearing applies.
+    const inkX = g.vertical
+      ? g.charBox.x + fontMetrics.inkOffsetXRight * fs
+      : g.charBox.x + fontMetrics.inkOffsetX * fs;
+    const inkY = g.charBox.y + (g.vertical ? 0 : fontMetrics.inkOffsetY * fs);
+    const dx = Math.abs(inkX - g.art.x);
+    const dy = Math.abs(inkY - g.art.y);
+    const posErr = Math.max(dx, dy);
+    // A third of the glyph's size: about a third of a character's
+    // width, which is at the edge of what the eye picks up.
+    const posTol = Math.max(8, g.art.cross * 0.33);
+    if (posErr > alignWorst) { alignWorst = posErr; alignWorstLine = g.text.slice(0, 14); }
+    if (posErr > posTol) {
+      misaligned.push({
+        text: g.text.slice(0, 14),
+        err: Math.round(posErr), tol: Math.round(posTol),
       });
+    }
+
+    // ── SIZE: the overlay's glyphs must be the artwork's size.
+    // The overlay's ink is the font size times the font's ink ratio.
+    const ovCross = g.vertical
+      ? fs * fontMetrics.inkWidth
+      : fs * fontMetrics.inkHeight;
+    const sizeErr = Math.abs(ovCross - g.art.cross) / g.art.cross;
+    if (sizeErr > sizeWorst) { sizeWorst = sizeErr; sizeWorstLine = g.text.slice(0, 14); }
+
+    // ── BLEED: the text must stay inside the WHITE PANEL.
+    //
+    // The white panel is painted on the LINE with a padding, so what
+    // matters is that the text stays inside that padded box — that is
+    // what the user sees as "the text running past the white
+    // background".
+    const panel = g.panel;
+    if (panel) {
+      const outLeft = (panel.x - panel.padX) - g.charBox.x;
+      const outTop = (panel.y - panel.padY) - g.charBox.y;
+      const outRight = (g.charBox.x + g.charBox.w) - (panel.x + panel.w + panel.padX);
+      const outBottom = (g.charBox.y + g.charBox.h) - (panel.y + panel.h + panel.padY);
+      const worst = Math.max(outLeft, outTop, outRight, outBottom);
+      if (worst > 0) {
+        bleed.push({
+          text: g.text.slice(0, 14),
+          over: Math.round(worst),
+          sides: { l: Math.round(outLeft), t: Math.round(outTop),
+                   r: Math.round(outRight), b: Math.round(outBottom) },
+        });
+      }
     }
   }
 
-  check("every line box matches its detected quad",
-    alignWorst <= 4, `worst mismatch ${alignWorst.toFixed(1)}px on "${alignWorstLine}"`);
+  check("the text starts at the artwork's lettering",
+    misaligned.length === 0,
+    `${misaligned.length} misaligned: ${JSON.stringify(misaligned.slice(0, 3))}`);
 
-  check("no text bleeds past its quad",
+  check("the glyphs are the same size as the artwork's lettering",
+    sizeWorst <= 0.25, `worst ${(sizeWorst * 100).toFixed(1)}% off on "${sizeWorstLine}"`);
+
+  check("no text bleeds past the white panel",
     bleed.length === 0, `${bleed.length} bleeding: ${JSON.stringify(bleed.slice(0, 3))}`);
 
   // ── 2: OVERLAP between lines ────────────────────────────────
@@ -256,14 +340,16 @@ async function main() {
   if (vertGeo.length) {
     let vWorst = 0, vWorstText = "";
     for (const g of vertGeo) {
-      const q = quadFor(g);
-      if (!q) continue;
-      const s = g.scale;
-      // For vertical text the GLYPH width must match the quad's width.
-      const dw = Math.abs(g.charBox.w - q.w * s);
+      if (!g.art) continue;
+      // For vertical text the GLYPH width must match the artwork's
+      // lettering width. The glyph's ink is the font size times the
+      // font's ink ratio — the rendered box is the em box, which is
+      // wider than the ink.
+      const ovW = parseFloat(g.fontSize) * fontMetrics.inkWidth;
+      const dw = Math.abs(ovW - g.art.cross);
       if (dw > vWorst) { vWorst = dw; vWorstText = g.text.slice(0, 12); }
     }
-    check("vertical glyphs match the quad's width",
+    check("vertical glyphs match the artwork's lettering width",
       vWorst <= 6, `worst ${vWorst.toFixed(1)}px on "${vWorstText}"`);
 
     // The writing mode must actually be vertical.

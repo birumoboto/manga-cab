@@ -184,7 +184,11 @@ async function main() {
       const b = rev[0];
       if (!b) return { none: true };
       const cs = getComputedStyle(b);
-      const before = getComputedStyle(b, '::before');
+      // The white panel is painted by the ::before pseudo-element of the
+      // LINE, not the block — a block can hold several lines with
+      // different quads, and the panel has to hug the text.
+      const line = b.querySelector('.ocr-line');
+      const before = getComputedStyle(line, '::before');
       const charCs = getComputedStyle(b.querySelector('.ocr-char'));
       return {
         count: rev.length,
