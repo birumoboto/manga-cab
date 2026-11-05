@@ -501,6 +501,52 @@ body { overflow: hidden; }
   overflow: visible;
 }
 
+/* ── Fitting the text to its quad ────────────────────────────────
+   The artwork's CJK lettering is condensed — the real ink is 0.58-0.83
+   as wide as it is tall — while the browser lays out square CJK
+   glyphs. Without this the text is far too wide, spills out of its
+   quad, overlaps its neighbours, and bleeds past the white panel.
+
+   --ocr-line-size  the font size that fits the quad's height, in cqw
+                    (the layer's width = the image's display width)
+   --ocr-condense   the squeeze that fits the quad's width
+*/
+.ocr-line.placed {
+  font-size: var(--ocr-line-size, var(--ocr-size, 16px));
+  /* The line box must be the glyph's em box, not 1.2em — otherwise the
+     inline boxes are taller than the text and spill out of the quad. */
+  line-height: 1;
+  transform: scaleX(var(--ocr-condense, 1));
+  transform-origin: left center;
+}
+.ocr-line.placed .ocr-char {
+  font-size: inherit;
+}
+
+/* Vertical text: the glyphs stack downward, so the squeeze applies to
+   the Y axis and the origin is the top of the line.
+
+   The line is a flex row by default. In vertical writing mode the
+   writing-mode already stacks the characters down the column, so the
+   flex direction must be ROW (not column) — otherwise the characters
+   would be laid out as flex items down the column AND down the column
+   again by the writing mode. */
+.ocr-box.vertical .ocr-line.placed {
+  transform: scaleY(var(--ocr-condense, 1));
+  transform-origin: center top;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  /* In vertical writing mode the line's inline axis runs downward, so
+     the text starts at the top of the column. */
+  align-content: flex-start;
+}
+.ocr-box.vertical .ocr-line.placed .ocr-char {
+  /* Each character is its own em box in vertical writing mode, so the
+     advance down the column is the character's height. */
+  display: inline-block;
+}
+
 /* Character-level highlight for tap-to-select. Each character is its own
    span so a tap can target exactly one character. */
 .ocr-char {
@@ -521,7 +567,11 @@ body { overflow: hidden; }
 
    The white panel is painted with a pseudo-element rather than padding
    on the box itself, so revealing a zone does NOT move the text. The
-   characters stay exactly where they were in the artwork. */
+   characters stay exactly where they were in the artwork.
+
+   The panel is sized to the LINE boxes, not the block box — a block
+   can hold several lines with different quads, and the panel should
+   hug the text rather than the whole block. */
 .ocr-box.revealed {
   color: #111118;
   -webkit-text-fill-color: #111118;
@@ -529,7 +579,7 @@ body { overflow: hidden; }
 .ocr-box.revealed::before {
   content: "";
   position: absolute;
-  inset: -4px -8px;
+  inset: -3px -6px;
   background: #ffffff;
   border-radius: 4px;
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);

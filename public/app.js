@@ -494,6 +494,7 @@ function applyOcr() {
       if (block.vertical) {
         box.style.writingMode = "vertical-rl";
         box.style.textAlign = "start";
+        box.classList.add("vertical");
       }
 
       // Each detected line gets its own line element, positioned at the
@@ -512,15 +513,18 @@ function applyOcr() {
 
         // Position from the detected line quad, relative to the block box.
         const quad = coords[i];
+        let quadW = 0, quadH = 0;
         if (quad && bw > 0 && bh > 0) {
           const xs = quad.map((p) => p[0]);
           const ys = quad.map((p) => p[1]);
           const lx0 = Math.min(...xs), lx1 = Math.max(...xs);
           const ly0 = Math.min(...ys), ly1 = Math.max(...ys);
+          quadW = lx1 - lx0;
+          quadH = ly1 - ly0;
           line.style.left = ((lx0 - bx0) / bw) * 100 + "%";
           line.style.top = ((ly0 - by0) / bh) * 100 + "%";
-          line.style.width = ((lx1 - lx0) / bw) * 100 + "%";
-          line.style.height = ((ly1 - ly0) / bh) * 100 + "%";
+          line.style.width = (quadW / bw) * 100 + "%";
+          line.style.height = (quadH / bh) * 100 + "%";
           line.classList.add("placed");
         }
 
@@ -538,6 +542,90 @@ function applyOcr() {
             state.chars.push(s);
           }
         }
+
+        // ── Fit the text to its quad ────────────────────────────
+        //
+        // The artwork's CJK lettering is CONDENSED: the real ink is
+        // 0.58-0.83 as wide as it is tall, while a browser lays out
+        // square CJK glyphs. So the natural width of the text is far
+        // wider than the detected quad, and the text spills out of it,
+        // overlaps its neighbours, and bleeds past the white panel.
+        //
+        // The fix is to fit the text to the quad it was detected in:
+        //
+        //   horizontal line — the glyph height is the quad's HEIGHT,
+        //                    and the advance width is condensed to fit
+        //   vertical line   — the glyph height is the quad's WIDTH,
+        //                    and the advance down the column is
+        //                    condensed to fit
+        //
+        // Both factors are per line, because each line has its own quad.
+        // The size is expressed in cqw (the layer's width, which is the
+        // image's display width), so it tracks the artwork at any size.
+        //
+        // The CONDENSE is a transform, so it does not change the line's
+        // layout box — the line keeps the quad's width, and the glyphs
+        // inside it are squeezed to fit. That is what we want: the box
+        // stays where the artwork is, and only the text is condensed.
+        const nChars = Math.max(1, spans.length);
+        const vertical = !!block.vertical;
+        if (quadW > 0 && quadH > 0) {
+          const fs = block.font_size || 16;
+
+          // The cross-axis extent of the glyphs: the line's height when
+          // the text runs horizontally, its width when it runs
+          // vertically.
+          const glyphBox = vertical ? quadW : quadH;
+
+          // The along-axis extent the text has to fit into.
+          const alongBox = vertical ? quadH : quadW;
+
+          // The font size whose EM BOX matches the cross-axis extent.
+          // The em box is what getBoundingClientRect() reports for a
+          // text run, so matching it to the quad is what keeps the
+          // glyphs inside the quad — and the quad is the artwork's own
+          // ink box, so this lines the overlay up with the lettering.
+          const fitSize = glyphBox;
+
+          // The size mokuro reported is the ink height. For a vertical
+          // line that is the glyph's width across the column, so it
+          // already matches the cross axis — but a vertical line is
+          // often TALLER than one character, so the font can be larger
+          // than mokuro's estimate. Allow it to grow to fill the quad.
+          const sizeScale = vertical
+            ? Math.max(1, fitSize / fs)
+            : Math.min(1, fitSize / fs);
+
+          // Condense along the text's own axis so the text fits.
+          // The natural advance is one em per CJK character.
+          const naturalAdvance = fs * sizeScale;
+          const targetAdvance = alongBox / nChars;
+          const condense = Math.min(1, targetAdvance / naturalAdvance);
+
+          // The size is a fraction of the layer's width (cqw), so the
+          // line scales with the artwork at any screen size.
+          const baseSize = (fs / W) * 100;          // percent of the layer
+          line.style.setProperty("--ocr-line-size",
+            (baseSize * sizeScale).toFixed(4) + "cqw");
+          line.style.setProperty("--ocr-condense", condense.toFixed(4));
+
+          // The line's layout box must be the quad's size so the
+          // characters are laid out inside it. The transform then
+          // condenses them visually.
+          //
+          // The transform scales the box along the text's own axis, so
+          // that axis is divided by the condense factor — after the
+          // transform the box renders at exactly the quad's size. The
+          // CROSS axis is not scaled, so it is set to the quad directly.
+          if (vertical) {
+            line.style.width = (quadW / bw) * 100 + "%";
+            line.style.height = (quadH / condense / bh) * 100 + "%";
+          } else {
+            line.style.width = (quadW / condense / bw) * 100 + "%";
+            line.style.height = (quadH / bh) * 100 + "%";
+          }
+        }
+
         box.appendChild(line);
       }
       box.dataset.ocrBlock = String(blockIndex);
@@ -700,6 +788,9 @@ function collapseZones() {
  * a white panel so they can be read. A tap on a character also highlights
  * that character.
  *
+ * A tap OUTSIDE any zone clears everything: the revealed zone collapses
+ * and the character highlight is removed.
+ *
  * It does NOT select the text or copy it: clicking is enough, and the
  * browser's own long-press selection still works if you want a run of
  * text.
@@ -710,13 +801,9 @@ function handleCharTap(x, y) {
   const ch = charAtPoint(x, y);
   const zone = zoneAtPoint(x, y);
 
-  // Tapping a revealed zone again closes it.
-  if (zone && zone.box.classList.contains("revealed") && !ch) {
-    collapseZones();
-    return true;
-  }
-
   if (!zone) {
+    // Clicked off the text: clear the highlight and collapse the zone.
+    clearTappedChars();
     collapseZones();
     return false;
   }
@@ -725,12 +812,17 @@ function handleCharTap(x, y) {
   revealZone(zone.box);
 
   if (ch) {
-    for (const w of document.querySelectorAll(".ocr-char.tapped")) {
-      w.classList.remove("tapped");
-    }
+    clearTappedChars();
     ch.classList.add("tapped");
   }
   return true;
+}
+
+/** Remove the highlight from every tapped character. */
+function clearTappedChars() {
+  for (const c of document.querySelectorAll(".ocr-char.tapped")) {
+    c.classList.remove("tapped");
+  }
 }
 
 function baseName(p) {
@@ -1135,27 +1227,24 @@ els.textPanelBtn.addEventListener("click", () => {
 });
 els.transcriptClose.addEventListener("click", () => toggleTranscript(false));
 
-// Tapping a character in the transcript highlights it, the same way the
+// Clicking a character in the transcript highlights it, the same way the
 // overlay does. The panel is a normal scrolling region, so this uses the
 // browser's own event target rather than hit-testing.
 //
-// Clicking a visible text node makes the browser select that word on its
-// own. We do not want that here — clicking is only meant to highlight the
-// character. So the selection is cleared after the click, and the
-// character keeps its highlight.
+// Clicking away from a character (on the panel's background, or on a
+// page heading) clears the highlight.
+//
+// The characters are `user-select: none` (see styles.css), so a click
+// does not make the browser select the character. The line itself keeps
+// `user-select: text`, so a long-press drag still selects a run of text.
 els.transcriptBody.addEventListener("click", (e) => {
   const ch = e.target.closest(".ocr-char");
-  if (!ch) return;
+  const tapped = els.transcriptBody.querySelectorAll(".ocr-char.tapped");
+  for (const c of tapped) c.classList.remove("tapped");
 
-  for (const c of els.transcriptBody.querySelectorAll(".ocr-char.tapped")) {
-    c.classList.remove("tapped");
-  }
-  ch.classList.add("tapped");
+  if (ch) ch.classList.add("tapped");
 
-  // The characters are `user-select: none` (see styles.css), so a click
-  // does not make the browser select the character. The line itself keeps
-  // `user-select: text`, so a long-press drag still selects a run of
-  // text if the user wants that.
+  // Clicked off the text: clear the selection too.
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) sel.removeAllRanges();
 });

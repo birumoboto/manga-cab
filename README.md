@@ -47,10 +47,24 @@ reveals it:
 - the region is painted **white**
 - the characters are drawn in **dark ink**
 - only one zone is revealed at a time
-- tapping outside collapses it
+- tapping outside collapses it and clears the character highlight
 
-The zone is measured from the *characters*, not the detected quad, because
-the laid-out text is often wider than the ink box mokuro reports.
+## Typography
+
+The overlay text is fitted to the quad mokuro detected for it, so it lines
+up with the artwork's lettering exactly.
+
+The artwork's CJK lettering is **condensed** — the real ink is 0.58–0.83
+as wide as it is tall — while a browser lays out square CJK glyphs. So
+each line is sized to its quad and condensed along its own axis:
+
+- **horizontal** — the glyph height matches the quad's height, the
+  advance width is squeezed to the quad's width
+- **vertical** — the glyph width matches the quad's width, the advance
+  down the column is squeezed to the quad's height
+
+`scripts/measure_ink.py` measures the real ink inside each quad in the
+artwork; that is the ground truth the overlay is fitted against.
 
 ### Zone API for add-ons
 
@@ -184,6 +198,7 @@ login and is reachable over Tailscale:
 | Suite | Covers |
 |---|---|
 | `firefox add-on` | Runs the real add-on script against the app and drives it with real pointer events |
+| `typography` | Every line matches its detected quad; no overlap; no bleed; vertical text; click-off clears the highlight |
 | `text zones` | Every text block has a zone; tapping reveals it on white; one at a time |
 | `ui revamp` | Shelf ↔ reader navigation, back button, the three OCR modes, the `MANGA_CAB` API |
 | `cache policy` | The app shell is never stale; the add-on is downloadable |

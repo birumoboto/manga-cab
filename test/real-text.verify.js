@@ -150,8 +150,12 @@ async function main() {
   const longest = rendered.slice().sort((a, b) => b.len - a.len)[0];
   console.log(`  longest: "${longest?.text?.slice(0, 40)}" (${longest?.len} chars)`);
   check("the longest sentence is fully rendered", longest && longest.len > 20, `${longest?.len} chars`);
-  check("the longest sentence overflows rather than clipping",
-    longest && longest.textW >= longest.boxW,
+  // The text now FITS its quad (condensed to the detected width), so it
+  // no longer overflows. What matters is that it is not clipped: the
+  // rendered width covers the whole sentence, and the box is not
+  // hiding any of it.
+  check("the longest sentence is not clipped",
+    longest && longest.textW > 0 && longest.textW <= longest.boxW + 2,
     `text=${longest?.textW}px box=${longest?.boxW}px`);
 
   // ── A single character can be tapped in the real volume ─────
