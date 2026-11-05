@@ -33,10 +33,33 @@ pill, bottom-right). It has three modes:
 | Mode | What it does |
 |---|---|
 | **OFF** | No text layer. Clean artwork. |
-| **TAP** | The text is invisible but tappable. Tap a bubble to highlight it. Scrolling over the artwork always works. |
+| **TAP** | The text is invisible but tappable. Tap a speech bubble and it is revealed: the region's background turns white and the characters are drawn in dark ink so you can read them. |
 | **READ** | The text is drawn on the page, so you can select it with a finger, copy it, or let an add-on read it. |
 
 The top-bar text button cycles the modes. `O` toggles the layer on/off.
+
+## Text zones
+
+Every detected text block has a **zone** — the area of the artwork where
+that text lives. In TAP mode the zone is invisible, but tapping inside it
+reveals it:
+
+- the region is painted **white**
+- the characters are drawn in **dark ink**
+- only one zone is revealed at a time
+- tapping outside collapses it
+
+The zone is measured from the *characters*, not the detected quad, because
+the laid-out text is often wider than the ink box mokuro reports.
+
+### Zone API for add-ons
+
+```js
+MANGA_CAB.getZones()          // every zone: {index, text, page, block, x, y, width, height, revealed}
+MANGA_CAB.hitZone(x, y)        // the zone under a viewport point
+MANGA_CAB.revealZone(index)    // reveal a zone by index
+MANGA_CAB.collapseZones()      // hide every revealed zone
+```
 
 ## The Firefox add-on
 
@@ -161,6 +184,7 @@ login and is reachable over Tailscale:
 | Suite | Covers |
 |---|---|
 | `firefox add-on` | Runs the real add-on script against the app and drives it with real pointer events |
+| `text zones` | Every text block has a zone; tapping reveals it on white; one at a time |
 | `ui revamp` | Shelf ↔ reader navigation, back button, the three OCR modes, the `MANGA_CAB` API |
 | `cache policy` | The app shell is never stale; the add-on is downloadable |
 | `transcript button` | The transcript button on 4 phone viewports |

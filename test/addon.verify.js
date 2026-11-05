@@ -178,6 +178,21 @@ async function main() {
       lineText && panel.text.includes(lineText.replace(/\s+/g, "").slice(0, 4)),
       `line="${lineText}"`);
 
+    // The add-on must also reveal the ZONE the user tapped, so the text
+    // is painted on white and can be read.
+    const zoneState = await ev(`(() => {
+      const rev = Array.from(document.querySelectorAll('.ocr-box.revealed'));
+      return {
+        count: rev.length,
+        // The white panel is painted by the ::before pseudo-element.
+        bg: rev[0] ? getComputedStyle(rev[0], '::before').backgroundColor : null,
+        text: rev[0] ? rev[0].textContent.slice(0, 30) : null,
+      };
+    })()`);
+    check("the add-on reveals the tapped zone", zoneState.count === 1, JSON.stringify(zoneState));
+    check("the revealed zone is painted white",
+      /rgb\(255, 255, 255\)/.test(zoneState.bg || ""), `bg=${zoneState.bg}`);
+
     // ── Tapping empty space hides it ──────────────────────────
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 20, y: 400, button: "left", clickCount: 1 }, sessionId);
     await sleep(60);

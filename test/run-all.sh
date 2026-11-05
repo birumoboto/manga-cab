@@ -17,6 +17,7 @@ run() {
   fi
 }
 
+run "text zones (tap to reveal on white)" node test/zones.verify.js
 run "firefox add-on (tap to read)"     node test/addon.verify.js
 run "ui revamp (menu + ocr modes + api)" node test/ui-revamp.verify.js
 run "cache policy (no stale shell)"    node test/cache.verify.js

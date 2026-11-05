@@ -58,6 +58,16 @@
     };
   }
 
+  // ── Find the text ZONE under a point ────────────────────────
+  //
+  // A zone is the area of the artwork where one detected text block
+  // lives. Tapping a zone reveals it: the text is drawn on white so it
+  // can be read.
+  function zoneAt(x, y) {
+    if (!hasApi() || typeof window.MANGA_CAB.hitZone !== "function") return null;
+    return window.MANGA_CAB.hitZone(x, y);
+  }
+
   // ── The reading panel ────────────────────────────────────────
   function ensurePanel() {
     if (panel && document.body.contains(panel)) return panel;
@@ -128,8 +138,33 @@
     // Only left/touch.
     if (e.button !== 0 && e.pointerType === "mouse") return;
 
+    // Work out what was tapped BEFORE revealing anything, because the
+    // reveal changes the layout (the white panel pads the text).
     const sec = sectionAt(e.clientX, e.clientY);
-    if (!sec) { hidePanel(); return; }
+    const zone = zoneAt(e.clientX, e.clientY);
+
+    // A tap inside a text ZONE reveals it — the app paints that region
+    // white and draws the characters dark so they can be read.
+    if (zone && typeof window.MANGA_CAB.revealZone === "function") {
+      const zones = window.MANGA_CAB.getZones();
+      const idx = zones.findIndex((z) => z.el === zone.el);
+      if (idx >= 0) window.MANGA_CAB.revealZone(idx);
+    }
+
+    if (!sec) {
+      // Tapped a zone but not exactly on a character: show the zone's
+      // whole text instead.
+      if (zone) {
+        showPanel(
+          `<div style="font-size:11px;letter-spacing:1.5px;color:#9a9aab;margin-bottom:4px">` +
+          `PAGE ${zone.page + 1} &middot; SECTION ${zone.block + 1}</div>` +
+          `<div>${String(zone.text).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))}</div>`
+        );
+        return;
+      }
+      hidePanel();
+      return;
+    }
 
     // Build the panel. The whole sentence, with the tapped character
     // highlighted so you can see exactly where you tapped.

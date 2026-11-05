@@ -217,20 +217,22 @@ async function main() {
       const page = ${JSON.stringify(ocr.pages.map((p) => p.blocks || []))}[idx];
       if (!page) continue;
       const boxes = Array.from(wrap.querySelectorAll('.ocr-box'));
-      for (let bi = 0; bi < Math.min(boxes.length, page.length); bi++) {
-        const b = boxes[bi], blk = page[bi];
+      for (const b of boxes) {
+        // Match by the block index the app stamped on the element, NOT by
+        // array position — blocks with no OCR text are not rendered, so
+        // the positions do not line up.
+        const blk = page[Number(b.dataset.ocrBlock)];
+        if (!blk) continue;
         const quad = blk.lines_coords?.[0];
         if (!quad) continue;
         const xs = quad.map((p) => p[0]), ys = quad.map((p) => p[1]);
         const qcx = (Math.min(...xs) + Math.max(...xs)) / 2;
         const qcy = (Math.min(...ys) + Math.max(...ys)) / 2;
         const img = wrap.querySelector('img');
-        const scale = img.getBoundingClientRect().width / (blk && img.naturalWidth);
-        const br = b.getBoundingClientRect();
         const line = b.querySelector('.ocr-line');
         if (!line) continue;
         const lr = line.getBoundingClientRect();
-        // Expected centre in viewport coords: block box + quad offset.
+        // Expected centre in viewport coords: image + quad offset.
         const imgRect = img.getBoundingClientRect();
         const W = ${JSON.stringify(ocr.pages.map((p) => p.img_width))}[idx];
         const expX = imgRect.left + (qcx / W) * imgRect.width;

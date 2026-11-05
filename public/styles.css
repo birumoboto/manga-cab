@@ -514,6 +514,47 @@ body { overflow: hidden; }
   -webkit-text-fill-color: #ffffff;
 }
 
+/* ── Revealed zone ─────────────────────────────────────────────
+   Tapping a text zone paints its background white and draws the
+   characters in dark ink, so the dialogue can actually be read over
+   the artwork. Only one zone is revealed at a time.
+
+   The white panel is painted with a pseudo-element rather than padding
+   on the box itself, so revealing a zone does NOT move the text. The
+   characters stay exactly where they were in the artwork. */
+.ocr-box.revealed {
+  color: #111118;
+  -webkit-text-fill-color: #111118;
+}
+.ocr-box.revealed::before {
+  content: "";
+  position: absolute;
+  inset: -4px -8px;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+  z-index: -1;
+}
+.ocr-box.revealed .ocr-char {
+  color: #111118;
+  -webkit-text-fill-color: #111118;
+}
+.ocr-box.revealed .ocr-char.tapped {
+  background: var(--accent);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+/* The revealed text must be selectable too, so the user can copy a run
+   of it if they want to. */
+.ocr-box.revealed .ocr-line {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ocr-box.revealed .ocr-char {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* While the layer is on, the text is transparent so it sits invisibly on
    the artwork. But a selection must be VISIBLE, so the ::selection rule
    has to out-specify the transparent base rule — hence the doubled

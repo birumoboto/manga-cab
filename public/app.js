@@ -541,6 +541,13 @@ function applyOcr() {
         box.appendChild(line);
       }
       box.dataset.ocrBlock = String(blockIndex);
+      box.dataset.ocrPage = String(pageIndex);
+      // A block with no text at all (OCR detected a region but read
+      // nothing) has no zone worth revealing, so it is not rendered.
+      if (!box.textContent.trim()) {
+        box.remove();
+        continue;
+      }
       layer.appendChild(box);
     }
   }
@@ -585,22 +592,144 @@ function charAtPoint(x, y) {
 }
 
 /**
- * Handle a tap on a character in the OCR layer.
+ * The clickable ZONE for a detected text block.
  *
- * The tap just highlights the character — it does NOT select it or copy it.
- * Clicking the text is enough; the highlight confirms what you hit, and
- * the browser's own long-press selection still works if you want to
- * select a run of text yourself.
+ * The zone is the area of the artwork where the text lives. mokuro gives
+ * us a bounding box per block (the ink area) and a quadrilateral per line.
+ * The union of the line quads is the real extent of the rendered text —
+ * the block box can be tighter than the text, and the text can overflow
+ * it, so the line rects are the honest answer.
+ *
+ * A little padding is added so the zone is a comfortable tap target even
+ * when the text is small.
+ */
+const ZONE_PAD_X = 10;
+const ZONE_PAD_Y = 6;
+
+function zoneRect(boxEl) {
+  // The zone is the extent of the TEXT, so measure the characters
+  // themselves. A line box is sized from the detected quad, but its text
+  // can overflow that (the ink box is often narrower than the laid-out
+  // text), so the characters are the honest answer.
+  const chars = boxEl.querySelectorAll(".ocr-char");
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+
+  for (const ch of chars) {
+    const r = ch.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) continue;
+    left = Math.min(left, r.left);
+    top = Math.min(top, r.top);
+    right = Math.max(right, r.right);
+    bottom = Math.max(bottom, r.bottom);
+  }
+
+  // No characters rendered (lazy rendering) — fall back to the line boxes.
+  if (!Number.isFinite(left)) {
+    for (const line of boxEl.querySelectorAll(".ocr-line")) {
+      const r = line.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      left = Math.min(left, r.left);
+      top = Math.min(top, r.top);
+      right = Math.max(right, r.right);
+      bottom = Math.max(bottom, r.bottom);
+    }
+  }
+
+  // Still nothing — fall back to the block box itself.
+  if (!Number.isFinite(left)) {
+    const r = boxEl.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return null;
+    left = r.left; top = r.top; right = r.right; bottom = r.bottom;
+  }
+
+  return {
+    left: left - ZONE_PAD_X,
+    top: top - ZONE_PAD_Y,
+    right: right + ZONE_PAD_X,
+    bottom: bottom + ZONE_PAD_Y,
+    width: (right - left) + ZONE_PAD_X * 2,
+    height: (bottom - top) + ZONE_PAD_Y * 2,
+  };
+}
+
+/**
+ * Find the text zone under a viewport point.
+ *
+ * Zones are checked in reverse document order so the one drawn last (the
+ * topmost) wins when zones overlap.
+ */
+function zoneAtPoint(x, y) {
+  const boxes = document.querySelectorAll(".ocr-box");
+  for (let i = boxes.length - 1; i >= 0; i--) {
+    const box = boxes[i];
+    const r = zoneRect(box);
+    if (!r) continue;
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      return { box, rect: r };
+    }
+  }
+  return null;
+}
+
+/**
+ * Reveal a text zone: draw the block's characters on a white panel.
+ *
+ * Only one zone is revealed at a time — revealing every zone at once
+ * would cover the artwork in white boxes.
+ */
+function revealZone(boxEl) {
+  for (const b of document.querySelectorAll(".ocr-box.revealed")) {
+    b.classList.remove("revealed");
+  }
+  if (!boxEl) return null;
+  boxEl.classList.add("revealed");
+  return boxEl;
+}
+
+/** Hide any revealed zone. */
+function collapseZones() {
+  for (const b of document.querySelectorAll(".ocr-box.revealed")) {
+    b.classList.remove("revealed");
+  }
+}
+
+/**
+ * Handle a tap on the OCR layer.
+ *
+ * A tap inside a text zone reveals that zone — the characters are drawn on
+ * a white panel so they can be read. A tap on a character also highlights
+ * that character.
+ *
+ * It does NOT select the text or copy it: clicking is enough, and the
+ * browser's own long-press selection still works if you want a run of
+ * text.
  */
 function handleCharTap(x, y) {
+  // Work out what was tapped BEFORE revealing anything — revealing
+  // changes the layout (the white panel pads the text).
   const ch = charAtPoint(x, y);
-  if (!ch) return false;
+  const zone = zoneAtPoint(x, y);
 
-  // Clear any previous tap highlight.
-  for (const w of document.querySelectorAll(".ocr-char.tapped")) {
-    w.classList.remove("tapped");
+  // Tapping a revealed zone again closes it.
+  if (zone && zone.box.classList.contains("revealed") && !ch) {
+    collapseZones();
+    return true;
   }
-  ch.classList.add("tapped");
+
+  if (!zone) {
+    collapseZones();
+    return false;
+  }
+
+  // Reveal the zone the user hit.
+  revealZone(zone.box);
+
+  if (ch) {
+    for (const w of document.querySelectorAll(".ocr-char.tapped")) {
+      w.classList.remove("tapped");
+    }
+    ch.classList.add("tapped");
+  }
   return true;
 }
 
@@ -1130,6 +1259,59 @@ const MANGA_CAB = {
   /** The current display mode: "off" | "tap" | "read". */
   getMode() {
     return state.ocrMode;
+  },
+
+  /**
+   * Every clickable text zone, with its rect and text.
+   *
+   * A zone is the area of the artwork where one detected text block
+   * lives. Tapping a zone reveals it — the text is drawn on white so it
+   * can be read.
+   */
+  getZones() {
+    return Array.from(document.querySelectorAll(".ocr-box")).map((box, i) => {
+      const r = zoneRect(box);
+      const lines = Array.from(box.querySelectorAll(".ocr-line"));
+      return {
+        index: i,
+        text: box.textContent,
+        page: Number(box.dataset.ocrPage ?? -1),
+        block: Number(box.dataset.ocrBlock ?? -1),
+        el: box,
+        revealed: box.classList.contains("revealed"),
+        lines: lines.map((l) => l.textContent),
+        x: r ? r.left : 0, y: r ? r.top : 0,
+        width: r ? r.width : 0, height: r ? r.height : 0,
+      };
+    });
+  },
+
+  /** The zone under a viewport point, or null. */
+  hitZone(x, y) {
+    const z = zoneAtPoint(x, y);
+    if (!z) return null;
+    return {
+      el: z.box,
+      text: z.box.textContent,
+      page: Number(z.box.dataset.ocrPage ?? -1),
+      block: Number(z.box.dataset.ocrBlock ?? -1),
+      revealed: z.box.classList.contains("revealed"),
+      x: z.rect.left, y: z.rect.top,
+      width: z.rect.width, height: z.rect.height,
+    };
+  },
+
+  /** Reveal a zone by index (from getZones()). */
+  revealZone(index) {
+    const boxes = document.querySelectorAll(".ocr-box");
+    if (index < 0 || index >= boxes.length) return false;
+    revealZone(boxes[index]);
+    return true;
+  },
+
+  /** Collapse every revealed zone. */
+  collapseZones() {
+    collapseZones();
   },
 
   /** Switch display mode from an add-on. */
