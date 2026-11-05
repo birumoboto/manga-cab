@@ -47,6 +47,10 @@ const els = {
   titleInput: $("titleInput"),
   uploadStatus: $("uploadStatus"),
   ocrToggle: $("ocrToggle"),
+  textToggle: $("textToggle"),
+  transcript: $("transcript"),
+  transcriptClose: $("transcriptClose"),
+  transcriptBody: $("transcriptBody"),
   fsBtn: $("fsBtn"),
   mokuroInput: $("mokuroInput"),
   pickMokuro: $("pickMokuro"),
@@ -64,7 +68,8 @@ const state = {
   ocrData: null,
   visible: new Set(),
   observer: null,
-  chars: [],       // character spans in the OCR layer, for hit-testing
+  chars: [],            // character spans in the OCR overlay, for hit-testing
+  transcriptChars: [],  // character spans in the transcript panel
   tapTimer: null,
   tapPoint: null,
 };
@@ -287,6 +292,8 @@ async function loadOcr(id) {
     const data = await res.json();
     state.ocrData = data && data.pages ? data : null;
     if (state.ocr) applyOcr();
+    // Refresh the transcript if it is open, so it shows the new data.
+    if (!els.transcript.hidden) renderTranscript();
   } catch {
     // No OCR data for this volume — fine.
   }
@@ -392,13 +399,34 @@ function applyOcr() {
         box.style.textAlign = "start";
       }
 
-      // Each line of the block gets its own line element so multi-line
-      // blocks are not run together, and each character becomes a span so
-      // it can be selected on its own.
+      // Each detected line gets its own line element, positioned at the
+      // exact quadrilateral mokuro detected for it (lines_coords). That
+      // puts every OCR section on its own line, exactly where it sits in
+      // the artwork — instead of stacking the lines by guesswork.
       const lines = block.lines || [];
-      for (const lineText of lines) {
+      const coords = block.lines_coords || [];
+      const bx0 = x0, by0 = y0, bx1 = x1, by1 = y1;
+      const bw = bx1 - bx0, bh = by1 - by0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const lineText = lines[i];
         const line = document.createElement("div");
         line.className = "ocr-line";
+
+        // Position from the detected line quad, relative to the block box.
+        const quad = coords[i];
+        if (quad && bw > 0 && bh > 0) {
+          const xs = quad.map((p) => p[0]);
+          const ys = quad.map((p) => p[1]);
+          const lx0 = Math.min(...xs), lx1 = Math.max(...xs);
+          const ly0 = Math.min(...ys), ly1 = Math.max(...ys);
+          line.style.left = ((lx0 - bx0) / bw) * 100 + "%";
+          line.style.top = ((ly0 - by0) / bh) * 100 + "%";
+          line.style.width = ((lx1 - lx0) / bw) * 100 + "%";
+          line.style.height = ((ly1 - ly0) / bh) * 100 + "%";
+          line.classList.add("placed");
+        }
+
         const spans = buildCharSpans(lineText);
         line.append(...spans);
         for (const s of spans) {
@@ -804,6 +832,110 @@ els.reader.addEventListener("pointerup", onPointerUp, { passive: true });
 els.reader.addEventListener("pointercancel", () => { state.tapPoint = null; }, { passive: true });
 
 // ═══════════════════════════════════════════════════════════════
+// OCR transcript panel
+//
+// The overlay text is transparent and sits on top of the artwork, so you
+// can select it but you cannot *read* it in one place. This panel lists
+// every OCR section on its own line — one line per detected section,
+// one line per detected line within a section — grouped by page.
+//
+// Each line is real selectable text (not a canvas or an image), so the
+// usual text selection, copy and translate tools all work.
+// ═══════════════════════════════════════════════════════════════
+
+function toggleTranscript(on) {
+  const show = on ?? !els.transcript.hidden;
+  if (show) {
+    renderTranscript();
+    els.transcript.hidden = false;
+    requestAnimationFrame(() => els.transcript.classList.add("open"));
+  } else {
+    els.transcript.classList.remove("open");
+    setTimeout(() => { els.transcript.hidden = true; }, 220);
+  }
+  els.textToggle.setAttribute("aria-pressed", show ? "true" : "false");
+}
+
+function renderTranscript() {
+  els.transcriptBody.innerHTML = "";
+  state.transcriptChars = [];
+  const data = state.ocrData;
+  if (!data || !data.pages?.length) {
+    const p = document.createElement("p");
+    p.className = "transcript-empty";
+    p.textContent = state.volume
+      ? "No OCR data for this volume yet. Open the library and press RUN OCR."
+      : "Open a volume first.";
+    els.transcriptBody.appendChild(p);
+    return;
+  }
+
+  let sectionCount = 0;
+  let lineCount = 0;
+
+  for (let i = 0; i < data.pages.length; i++) {
+    const page = data.pages[i];
+    const blocks = page.blocks || [];
+    if (!blocks.length) continue;
+
+    // Page heading, so the sections are grouped and findable.
+    const h = document.createElement("h3");
+    h.className = "transcript-page";
+    h.textContent = `Page ${i + 1}`;
+    els.transcriptBody.appendChild(h);
+
+    for (const block of blocks) {
+      const lines = block.lines || [];
+      for (const lineText of lines) {
+        if (!lineText.trim()) continue;
+
+        // One OCR section per line. A section that spans several detected
+        // lines contributes several rows here — each on its own line.
+        const row = document.createElement("p");
+        row.className = "transcript-line";
+        if (block.vertical) row.classList.add("vertical");
+
+        // Character spans, so each character stays individually selectable
+        // here too — same behaviour as the overlay.
+        const spans = buildCharSpans(lineText);
+        row.append(...spans);
+        for (const s of spans) state.transcriptChars.push(s);
+
+        els.transcriptBody.appendChild(row);
+        lineCount++;
+      }
+      sectionCount++;
+    }
+  }
+
+  const meta = document.createElement("p");
+  meta.className = "transcript-meta";
+  meta.textContent = `${sectionCount} section${sectionCount === 1 ? "" : "s"} · ${lineCount} line${lineCount === 1 ? "" : "s"}`;
+  els.transcriptBody.prepend(meta);
+}
+
+els.textToggle.addEventListener("click", () => toggleTranscript());
+els.transcriptClose.addEventListener("click", () => toggleTranscript(false));
+
+// Tapping a character in the transcript highlights it, the same way the
+// overlay does. The panel is a normal scrolling region, so this uses the
+// browser's own event target rather than hit-testing.
+els.transcriptBody.addEventListener("click", (e) => {
+  const ch = e.target.closest(".ocr-char");
+  if (!ch) return;
+  for (const c of els.transcriptBody.querySelectorAll(".ocr-char.tapped")) {
+    c.classList.remove("tapped");
+  }
+  ch.classList.add("tapped");
+  const range = document.createRange();
+  range.selectNodeContents(ch);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  showCopyHint(ch);
+});
+
+// ═══════════════════════════════════════════════════════════════
 // Fullscreen
 // ═══════════════════════════════════════════════════════════════
 
@@ -832,12 +964,14 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Home") els.reader.scrollTo({ top: 0, behavior: "smooth" });
   if (e.key === "End") els.reader.scrollTo({ top: els.reader.scrollHeight, behavior: "smooth" });
   if (e.key === "o" || e.key === "O") setOcr(!state.ocr);
+  if (e.key === "t" || e.key === "T") toggleTranscript();
 });
 
 // Expose a small surface for the headless test harness.
 window.openVolume = openVolume;
 window.setOcr = setOcr;
 window.attachMokuro = attachMokuro;
+window.toggleTranscript = toggleTranscript;
 window.state = state;
 
 // Start with the library open so the upload path is obvious.

@@ -17,6 +17,8 @@ run() {
   fi
 }
 
+run "ocr transcript (one section per line)" node test/transcript.verify.js
+run "overlay lines (one section per line)"  node test/overlay-lines.verify.js
 run "real webtoon text (no truncation)"  node test/real-text.verify.js
 run "text scale (matches artwork)"     node test/text-scale.verify.js
 run "text selection (tap + highlight)"  node test/touch-select.verify.js

@@ -30,6 +30,11 @@
           <path d="M4 5h16v2H4zM4 11h16v2H4zM4 17h10v2H4z"/>
         </svg>
       </button>
+      <button id="textToggle" class="icon-btn" aria-pressed="false" aria-label="Show OCR transcript" title="OCR transcript (T)">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M5 3h8l6 6v12H5zM13 3v6h6M8 13h8M8 17h5"/>
+        </svg>
+      </button>
       <button id="fsBtn" class="icon-btn" aria-label="Toggle fullscreen" title="Fullscreen">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
           <path d="M4 4h6v2H6v4H4zM20 4v6h-2V6h-4V4zM4 20v-6h2v4h4v2zM20 20h-6v-2h4v-4h2z"/>
@@ -93,6 +98,17 @@
     </div>
   </aside>
   <div id="scrim" class="scrim" hidden></div>
+
+  <!-- ── OCR transcript panel ────────────────────────────────── -->
+  <!-- Lists every OCR section on its own line, grouped by page, so the
+       whole text of a volume can be read (and selected) in one place. -->
+  <aside id="transcript" class="transcript" aria-label="OCR transcript" hidden>
+    <div class="transcript-head">
+      <h2>OCR TRANSCRIPT</h2>
+      <button id="transcriptClose" class="icon-btn small" aria-label="Close transcript">&times;</button>
+    </div>
+    <div id="transcriptBody" class="transcript-body"></div>
+  </aside>
 
   <!-- ── Reader ─────────────────────────────────────────────── -->
   <main id="reader" class="reader" tabindex="-1">

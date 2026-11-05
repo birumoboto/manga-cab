@@ -386,6 +386,16 @@ body { overflow: hidden; }
   white-space: nowrap;
 }
 
+/* A line with a detected quadrilateral is absolutely positioned inside
+   its block, so each OCR section lands exactly where it sits in the
+   artwork instead of being stacked by guesswork. */
+.ocr-line.placed {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+
 /* Character-level highlight for tap-to-select. Each character is its own
    span so a tap can target exactly one character. */
 .ocr-char {
@@ -495,12 +505,101 @@ body { overflow: hidden; }
   pointer-events: none;
 }
 
+/* ── OCR transcript panel ────────────────────────────────────── */
+/* Lists every OCR section on its own line. Slides in from the right. */
+.transcript {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  background: var(--bg-2);
+  border-left: 1px solid var(--line);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.5);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-t);
+  transform: translateX(102%);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.transcript.open { transform: translateX(0); }
+
+.transcript-head {
+  flex: 0 0 auto;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.transcript-head h2 { margin: 0; font-size: 13px; letter-spacing: 2px; color: var(--fg-dim); }
+
+.transcript-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px calc(24px + var(--safe-b));
+}
+
+.transcript-meta {
+  margin: 0 0 12px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--fg-dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.transcript-page {
+  margin: 16px 0 6px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.transcript-page:first-of-type { margin-top: 4px; }
+
+/* One OCR section per line. Each line is a real block element, so the
+   text is selectable, copyable and translatable like normal page text. */
+.transcript-line {
+  margin: 0 0 6px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--fg);
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.transcript-line.vertical {
+  writing-mode: vertical-rl;
+  max-height: 40vh;
+  margin-left: auto;
+}
+
+.transcript-empty {
+  margin: 24px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+/* Character highlight inside the transcript. */
+.transcript .ocr-char.tapped {
+  background: var(--accent);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  border-radius: 2px;
+}
+
 /* ── Wide screens ───────────────────────────────────────────── */
 @media (min-width: 900px) {
   .pages { padding-bottom: 30vh; }
   .page img { max-width: 820px; }
   .ocr-layer { max-width: 820px; }
   .library { width: 420px; }
+  .transcript { width: 460px; }
 }
 
 /* ── Short landscape phones ─────────────────────────────────── */
