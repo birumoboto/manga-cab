@@ -17,6 +17,7 @@ run() {
   fi
 }
 
+run "text scale (matches artwork)"     node test/text-scale.verify.js
 run "text selection (tap + highlight)"  node test/touch-select.verify.js
 run "encoding (multipart filenames)"   node test/encoding.test.js
 run "ui (headless chrome)"          node test/ui.verify.js

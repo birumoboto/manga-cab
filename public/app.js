@@ -348,7 +348,24 @@ function applyOcr() {
       box.style.top = (y0 / H) * 100 + "%";
       box.style.width = ((x1 - x0) / W) * 100 + "%";
       box.style.height = ((y1 - y0) / H) * 100 + "%";
-      box.style.setProperty("--ocr-size", (block.font_size || 16) + "px");
+
+      // Font size must scale with the image, not be a fixed pixel value.
+      //
+      // The block's box is given in *image* pixels, and mokuro's font_size
+      // is the height of the text in those same image pixels. The image is
+      // rendered at some display width, so to make the overlay text the
+      // same size as the artwork we need:
+      //
+      //     display px = font_size * (rendered image width / image width)
+      //
+      // The overlay layer is a CSS container (`container-type: inline-size`)
+      // that is exactly as wide as the rendered image, so `cqw` equals the
+      // image's display width. That makes the font size track the artwork
+      // at any screen size and any max-width cap, with no magic numbers:
+      //
+      //     font-size = (font_size / image_width) * 100cqw
+      const ratio = (block.font_size || 16) / W;
+      box.style.setProperty("--ocr-size", (ratio * 100).toFixed(4) + "cqw");
 
       if (block.vertical) {
         box.style.writingMode = "vertical-rl";
