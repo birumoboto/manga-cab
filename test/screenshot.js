@@ -72,6 +72,10 @@ async function main() {
     return r.result.value;
   };
 
+  // Never serve a cached stylesheet or script — a stale one makes the
+  // test report a failure that does not exist in the app.
+  await cdp.send("Network.enable", {}, sessionId);
+  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }, sessionId);
   await cdp.send("Page.navigate", { url: URL_BASE }, sessionId);
   await sleep(3000);
 

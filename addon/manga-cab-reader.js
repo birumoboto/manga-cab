@@ -144,21 +144,9 @@
       `<div>${marked}</div>`
     );
 
-    // Select the whole sentence so the browser's copy button works.
-    try {
-      const range = document.createRange();
-      const el = sec.rect && document.querySelector(`.ocr-char[data-ocr-page="${sec.page}"][data-ocr-block="${sec.block}"][data-ocr-line="${sec.line}"]`);
-      if (el) {
-        const chars = Array.from(el.parentElement.querySelectorAll(".ocr-char"));
-        const target = chars.find((c) => c.textContent === sec.char);
-        if (target) {
-          range.selectNodeContents(target);
-          const sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      }
-    } catch { /* selection is a nicety, not required */ }
+    // No auto-select and no auto-copy — clicking the text is enough.
+    // The browser's own long-press selection still works if the user
+    // wants to select a run of text.
   }, true);
 
   // Hide the panel when tapping empty space.

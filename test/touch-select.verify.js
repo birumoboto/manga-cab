@@ -83,6 +83,10 @@ async function main() {
     return r.result.value;
   };
 
+  // Never serve a cached stylesheet or script — a stale one makes the
+  // test report a failure that does not exist in the app.
+  await cdp.send("Network.enable", {}, sessionId);
+  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }, sessionId);
   await cdp.send("Page.navigate", { url: BASE }, sessionId);
   await sleep(2500);
 
@@ -210,7 +214,6 @@ async function main() {
   })()`);
   check("tapping a character highlights it", !!tapped, JSON.stringify(tapped));
   if (tapped) {
-    check("the tapped character is in the selection", tapped.selected.includes(tapped.text), JSON.stringify(tapped.selected));
     // The highlight must be an opaque, visible colour.
     const bg = tapped.bg.match(/rgba?\(([^)]+)\)/);
     const parts = bg ? bg[1].split(",").map(Number) : [];
@@ -218,15 +221,35 @@ async function main() {
     const notTransparent = parts.slice(0, 3).some((v) => v > 40);
     check("the highlight has a visible background", opaque && notTransparent, `bg=${tapped.bg}`);
     check("the highlighted text is readable", /rgb\(255, 255, 255\)/.test(tapped.color), `color=${tapped.color}`);
+    // Clicking is enough — the tap must NOT auto-select the text.
+    check("tapping does not auto-select the text", tapped.selected === "",
+      `selection="${tapped.selected}"`);
   }
-
+  // No copy toast — clicking the text is enough on its own.
   const hint = await ev(`(() => {
     const h = document.getElementById('ocrCopyHint');
-    if (!h) return null;
-    const cs = getComputedStyle(h);
-    return { text: h.textContent, opacity: cs.opacity, visible: h.classList.contains('show') };
+    return { exists: !!h, text: h?.textContent || null };
   })()`);
-  check("a copy hint appears", !!hint && hint.visible === true, JSON.stringify(hint));
+  check("there is no copy toast", hint.exists === false, JSON.stringify(hint));
+
+  // Clicking a second character moves the highlight rather than adding to it.
+  const second = await ev(`(() => {
+    const chars = Array.from(document.querySelectorAll('.ocr-char'));
+    if (chars.length < 2) return null;
+    const r = chars[1].getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2, text: chars[1].textContent };
+  })()`);
+  if (second) {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: second.x, y: second.y, button: "left", clickCount: 1 }, sessionId);
+    await sleep(60);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: second.x, y: second.y, button: "left", clickCount: 1 }, sessionId);
+    await sleep(400);
+    const now = await ev(`(() => {
+      const tapped = Array.from(document.querySelectorAll('.ocr-char.tapped'));
+      return { count: tapped.length, text: tapped.map(t => t.textContent).join('') };
+    })()`);
+    check("only one character is highlighted at a time", now.count === 1, JSON.stringify(now));
+  }
 
   // ── Scrolling must still work with the OCR layer on ────────
   const scrollWorked = await ev(`(async () => {

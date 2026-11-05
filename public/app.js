@@ -586,6 +586,11 @@ function charAtPoint(x, y) {
 
 /**
  * Handle a tap on a character in the OCR layer.
+ *
+ * The tap just highlights the character — it does NOT select it or copy it.
+ * Clicking the text is enough; the highlight confirms what you hit, and
+ * the browser's own long-press selection still works if you want to
+ * select a run of text yourself.
  */
 function handleCharTap(x, y) {
   const ch = charAtPoint(x, y);
@@ -596,42 +601,7 @@ function handleCharTap(x, y) {
     w.classList.remove("tapped");
   }
   ch.classList.add("tapped");
-
-  // Also select it natively, so the browser's own copy menu works.
-  const range = document.createRange();
-  range.selectNodeContents(ch);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  showCopyHint(ch);
   return true;
-}
-
-/**
- * Show a small "Copied" toast near the tapped word.
- */
-function showCopyHint(word) {
-  let hint = document.getElementById("ocrCopyHint");
-  if (!hint) {
-    hint = document.createElement("div");
-    hint.id = "ocrCopyHint";
-    hint.className = "ocr-copy-hint";
-    document.body.appendChild(hint);
-  }
-
-  const r = word.getBoundingClientRect();
-  hint.textContent = "COPIED";
-  hint.classList.add("show");
-
-  // Position above the word, clamped to the viewport.
-  const left = Math.max(12, Math.min(r.left + r.width / 2 - 34, window.innerWidth - 88));
-  const top = Math.max(12, r.top - 34);
-  hint.style.left = left + "px";
-  hint.style.top = top + "px";
-
-  clearTimeout(hint._timer);
-  hint._timer = setTimeout(() => hint.classList.remove("show"), 1400);
 }
 
 function baseName(p) {
@@ -1039,19 +1009,26 @@ els.transcriptClose.addEventListener("click", () => toggleTranscript(false));
 // Tapping a character in the transcript highlights it, the same way the
 // overlay does. The panel is a normal scrolling region, so this uses the
 // browser's own event target rather than hit-testing.
+//
+// Clicking a visible text node makes the browser select that word on its
+// own. We do not want that here — clicking is only meant to highlight the
+// character. So the selection is cleared after the click, and the
+// character keeps its highlight.
 els.transcriptBody.addEventListener("click", (e) => {
   const ch = e.target.closest(".ocr-char");
   if (!ch) return;
+
   for (const c of els.transcriptBody.querySelectorAll(".ocr-char.tapped")) {
     c.classList.remove("tapped");
   }
   ch.classList.add("tapped");
-  const range = document.createRange();
-  range.selectNodeContents(ch);
+
+  // The characters are `user-select: none` (see styles.css), so a click
+  // does not make the browser select the character. The line itself keeps
+  // `user-select: text`, so a long-press drag still selects a run of
+  // text if the user wants that.
   const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  showCopyHint(ch);
+  if (sel && !sel.isCollapsed) sel.removeAllRanges();
 });
 
 /**

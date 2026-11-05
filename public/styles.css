@@ -551,24 +551,6 @@ body { overflow: hidden; }
   -webkit-text-fill-color: #fff;
 }
 
-/* A tap on a word shows a copy affordance. */
-.ocr-copy-hint {
-  position: fixed;
-  z-index: 80;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  padding: 5px 9px;
-  border-radius: 6px;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.15s, transform 0.15s;
-}
-.ocr-copy-hint.show { opacity: 1; transform: translateY(0); }
-
 /* ═══════════════════════════════════════════════════════════════
    OCR SHEET — slides up from the bottom
    ═══════════════════════════════════════════════════════════════ */
@@ -800,7 +782,13 @@ body { overflow: hidden; }
 .transcript-page:first-of-type { margin-top: 4px; }
 
 /* One OCR section per line. Each line is a real block element, so the
-   text is selectable, copyable and translatable like normal page text. */
+   text is selectable, copyable and translatable like normal page text.
+
+   The individual characters are `user-select: none` so that a plain
+   click on one does not make the browser select that character — clicking
+   a character is only meant to highlight it. The LINE keeps
+   `user-select: text`, so the browser's own long-press / drag selection
+   still works over the whole section. */
 .transcript-line {
   margin: 0 0 6px;
   font-size: 15px;
@@ -809,6 +797,10 @@ body { overflow: hidden; }
   word-break: break-word;
   user-select: text;
   -webkit-user-select: text;
+}
+.transcript-line .ocr-char {
+  user-select: none;
+  -webkit-user-select: none;
 }
 .transcript-line.vertical {
   writing-mode: vertical-rl;

@@ -126,6 +126,10 @@ async function main() {
     width: 412, height: 915, deviceScaleFactor: 2, mobile: true,
   }, sessionId);
 
+  // Never serve a cached stylesheet or script — a stale one makes the
+  // test report a failure that does not exist in the app.
+  await cdp.send("Network.enable", {}, sessionId);
+  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }, sessionId);
   await cdp.send("Page.navigate", { url: BASE }, sessionId);
   await sleep(2500);
 
