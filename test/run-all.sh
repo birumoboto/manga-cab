@@ -17,6 +17,7 @@ run() {
   fi
 }
 
+run "text selection (tap + highlight)"  node test/touch-select.verify.js
 run "encoding (multipart filenames)"   node test/encoding.test.js
 run "ui (headless chrome)"          node test/ui.verify.js
 run "ocr pipeline (real mokuro)"     node test/ocr.verify.js

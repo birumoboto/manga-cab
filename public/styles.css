@@ -338,13 +338,15 @@ body { overflow: hidden; }
   object-fit: contain;
 }
 
-/* OCR text overlay — absolutely positioned selectable text */
+/* ── OCR text overlay — absolutely positioned selectable text ── */
+/* The layer is pointer-events: none so that dragging over the artwork
+   still scrolls the reader. Word taps are handled by hit-testing the
+   word rects (see wordAtPoint in app.js) rather than by DOM events. */
 .ocr-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-.ocr-layer.on { pointer-events: auto; }
 .ocr-box {
   position: absolute;
   color: transparent;
@@ -357,8 +359,61 @@ body { overflow: hidden; }
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* While the layer is on, the text is transparent so it sits invisibly on
+   top of the artwork — but it MUST stay selectable.
+
+   NOTE: the ::selection rule below has to out-specify this one, otherwise
+   the selected text also stays transparent and the user sees nothing
+   highlighted. `.ocr-layer.on .ocr-box` is (0,2,0); a plain
+   `.ocr-box::selection` is only (0,1,1) and loses. Use the equally
+   specific `.ocr-layer.on .ocr-box::selection` so the highlight is
+   actually visible. */
 .ocr-layer.on .ocr-box { color: rgba(255, 255, 255, 0.001); }
+
+/* The visible highlight. */
+.ocr-layer.on .ocr-box::selection {
+  background: var(--accent);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+.ocr-layer.on .ocr-box::-moz-selection {
+  background: var(--accent);
+  color: #ffffff;
+}
+/* Keep the highlight readable even if the text is scrolled partly out. */
 .ocr-box::selection { background: var(--accent); color: #fff; }
+
+/* Word-level highlight for tap-to-select. Each word is its own span so a
+   tap can target exactly one word instead of the whole line. */
+.ocr-word {
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.ocr-word.tapped {
+  background: var(--accent);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
+/* A tap on a word shows a copy affordance. */
+.ocr-copy-hint {
+  position: fixed;
+  z-index: 50;
+  padding: 7px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ocr-copy-hint.show { opacity: 1; }
+
 .ocr-layer:not(.on) .ocr-box { user-select: none; -webkit-user-select: none; }
 
 /* While OCR is on, the image is dimmed so the selectable text reads clearly */

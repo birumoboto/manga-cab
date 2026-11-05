@@ -64,6 +64,9 @@ const state = {
   ocrData: null,
   visible: new Set(),
   observer: null,
+  words: [],       // word spans in the OCR layer, for hit-testing
+  tapTimer: null,
+  tapPoint: null,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -300,6 +303,7 @@ function setOcr(on) {
 }
 
 function clearOcr() {
+  state.words = [];
   for (const page of els.pages.children) {
     page.classList.remove("ocr-active");
     const layer = page.querySelector(".ocr-layer");
@@ -352,10 +356,109 @@ function applyOcr() {
       }
 
       const text = (block.lines || []).join("\n");
-      box.textContent = text;
+      // Split into word spans so a tap can select a single word.
+      const spans = buildWordSpans(text);
+      box.append(...spans);
+      for (const s of spans) {
+        if (s.classList?.contains("ocr-word")) state.words.push(s);
+      }
       layer.appendChild(box);
     }
   }
+}
+
+/**
+ * Build word-level spans for a line of text.
+ *
+ * Long-press-and-drag selection is finicky on mobile browsers, so we also
+ * support tap-to-select-a-word: each word is its own span, and tapping it
+ * highlights it and offers to copy.
+ */
+function buildWordSpans(text) {
+  const spans = [];
+  // Keep the whitespace between words as text nodes so the layout and the
+  // copied text match the original.
+  const parts = text.split(/(\s+)/);
+  for (const part of parts) {
+    if (!part) continue;
+    if (/^\s+$/.test(part)) {
+      spans.push(document.createTextNode(part));
+      continue;
+    }
+    const span = document.createElement("span");
+    span.className = "ocr-word";
+    span.textContent = part;
+    spans.push(span);
+  }
+  return spans;
+}
+
+/**
+ * Find the word under a viewport point.
+ *
+ * The OCR layer keeps `pointer-events: none` so that dragging over the text
+ * still scrolls the reader — that is essential in a webtoon reader. So we
+ * cannot rely on DOM event targets; we hit-test the word rects ourselves.
+ */
+function wordAtPoint(x, y) {
+  for (const word of state.words) {
+    const r = word.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    // Cheap vertical reject before the full bounds test.
+    if (y < r.top - 2 || y > r.bottom + 2) continue;
+    if (x >= r.left && x <= r.right) return word;
+  }
+  return null;
+}
+
+/**
+ * Handle a tap on a word in the OCR layer.
+ */
+function handleWordTap(x, y) {
+  const word = wordAtPoint(x, y);
+  if (!word) return false;
+
+  // Clear any previous tap highlight.
+  for (const w of document.querySelectorAll(".ocr-word.tapped")) {
+    w.classList.remove("tapped");
+  }
+  word.classList.add("tapped");
+
+  // Also select it natively, so the browser's own copy menu works.
+  const range = document.createRange();
+  range.selectNodeContents(word);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  showCopyHint(word);
+  return true;
+}
+
+/**
+ * Show a small "Copied" toast near the tapped word.
+ */
+function showCopyHint(word) {
+  let hint = document.getElementById("ocrCopyHint");
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.id = "ocrCopyHint";
+    hint.className = "ocr-copy-hint";
+    document.body.appendChild(hint);
+  }
+
+  const r = word.getBoundingClientRect();
+  hint.textContent = "COPIED";
+  hint.classList.add("show");
+
+  // Position above the word, clamped to the viewport.
+  const left = Math.max(12, Math.min(r.left + r.width / 2 - 34, window.innerWidth - 88));
+  const top = Math.max(12, r.top - 34);
+  hint.style.left = left + "px";
+  hint.style.top = top + "px";
+
+  clearTimeout(hint._timer);
+  hint._timer = setTimeout(() => hint.classList.remove("show"), 1400);
 }
 
 function baseName(p) {
@@ -621,6 +724,46 @@ function setOcrStatus(msg, cls = "") {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ═══════════════════════════════════════════════════════════════
+// Tap-to-select-a-word
+//
+// The OCR layer is `pointer-events: none` so that dragging over the
+// artwork still scrolls the reader — essential for a webtoon. That means
+// we get no DOM event target, so we hit-test the word rects ourselves.
+//
+// A tap is a touch/click that does not move much and does not last long
+// (i.e. it was not a scroll or a long-press selection).
+// ═══════════════════════════════════════════════════════════════
+
+const TAP_SLOP = 12;       // px of movement still counted as a tap
+const TAP_TIME = 500;      // ms
+
+function onPointerDown(e) {
+  if (!state.ocr) return;
+  state.tapPoint = { x: e.clientX, y: e.clientY, t: Date.now() };
+}
+
+function onPointerUp(e) {
+  if (!state.ocr || !state.tapPoint) return;
+
+  const dx = Math.abs(e.clientX - state.tapPoint.x);
+  const dy = Math.abs(e.clientY - state.tapPoint.y);
+  const dt = Date.now() - state.tapPoint.t;
+  state.tapPoint = null;
+
+  // Movement means the user was scrolling, not tapping.
+  if (dx > TAP_SLOP || dy > TAP_SLOP) return;
+  // A long press is the browser's own selection gesture — leave it alone.
+  if (dt > TAP_TIME) return;
+
+  handleWordTap(e.clientX, e.clientY);
+}
+
+els.reader.addEventListener("pointerdown", onPointerDown, { passive: true });
+els.reader.addEventListener("pointerup", onPointerUp, { passive: true });
+// A touch drag should never trigger a tap.
+els.reader.addEventListener("pointercancel", () => { state.tapPoint = null; }, { passive: true });
 
 // ═══════════════════════════════════════════════════════════════
 // Fullscreen
