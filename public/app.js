@@ -77,6 +77,7 @@ const els = {
   pickMokuro: $("pickMokuro"),
   runOcr: $("runOcr"),
   langSelect: $("langSelect"),
+  recognizerSelect: $("recognizerSelect"),
   ocrProgress: $("ocrProgress"),
   rail: $("rail"),
   railFill: $("railFill"),
@@ -1182,6 +1183,7 @@ async function runOcr() {
   }
 
   const lang = els.langSelect.value;
+  const recognizer = els.recognizerSelect?.value || "cnocr";
   els.runOcr.disabled = true;
   setOcrStatus("Starting OCR…");
 
@@ -1190,7 +1192,7 @@ async function runOcr() {
     res = await fetch(url(`/api/volumes/${state.volume.id}/ocr`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lang }),
+      body: JSON.stringify({ lang, recognizer }),
     });
   } catch (err) {
     els.runOcr.disabled = false;
@@ -1226,13 +1228,36 @@ async function pollOcr(volumeId) {
     }
 
     const job = status.jobs?.[volumeId];
+
+    // The server knows which engines it has; populate the picker from it
+    // so the UI never offers something the server cannot run.
+    if (status.recognizers?.length && els.recognizerSelect) {
+      const current = els.recognizerSelect.value;
+      const have = Array.from(els.recognizerSelect.options).map((o) => o.value).join(",");
+      const want = status.recognizers.map((r) => r.id).join(",");
+      if (have !== want) {
+        els.recognizerSelect.innerHTML = "";
+        for (const r of status.recognizers) {
+          const opt = document.createElement("option");
+          opt.value = r.id;
+          opt.textContent = r.label || r.id;
+          els.recognizerSelect.appendChild(opt);
+        }
+        if (status.recognizers.some((r) => r.id === current)) {
+          els.recognizerSelect.value = current;
+        }
+      }
+    }
+
     if (job) {
       if (job.status === "running") {
         const secs = Math.round((Date.now() - job.startedAt) / 1000);
-        setOcrStatus(`OCR running… ${secs}s elapsed (${job.pages} pages)`);
+        const engine = job.recognizer ? ` · ${job.recognizer}` : "";
+        setOcrStatus(`OCR running… ${secs}s elapsed (${job.pages} pages${engine})`);
       } else if (job.status === "done") {
         els.runOcr.disabled = false;
-        setOcrStatus(`OCR done — ${job.blocks ?? 0} text blocks found.`, "ok");
+        const engine = job.recognizer ? ` · ${job.recognizer}` : "";
+        setOcrStatus(`OCR done — ${job.blocks ?? 0} text blocks found${engine}.`, "ok");
         await loadOcr(volumeId);
         if (!state.ocr) setOcr(true);
         else applyOcr();

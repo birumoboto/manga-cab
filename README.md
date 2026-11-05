@@ -49,6 +49,48 @@ reveals it:
 - only one zone is revealed at a time
 - tapping outside collapses it and clears the character highlight
 
+## OCR engines
+
+The OCR sheet has a language picker and an engine picker.
+
+| engine | speed | vertical Chinese | horizontal Chinese |
+|---|---|---|---|
+| **CnOCR** | fast | drops characters from a column | 98.5% |
+| **PP-OCRv5** | slower | reads columns exactly | 99.1% |
+
+Measured on vertical columns with known text
+(`mokuro/tests/compare_vertical_recognizers.py`):
+
+```
+cnocr    columns read exactly 5/7   character accuracy 93.3%
+paddle   columns read exactly 7/7   character accuracy 100.0%
+```
+
+PP-OCRv5 needed one change to work, and it is in mokuro: a vertical
+column has to be presented with the characters **side by side**, not
+stacked down the strip. mokuro stacks them, because that is how
+manga-ocr was trained. So a recogniser now declares which form it
+wants:
+
+```python
+class PaddleRecognizer:
+    vertical_orientation = "sideways"   # manga-ocr and cnocr use "stacked"
+```
+
+The orientation A/B, on columns with known text
+(`mokuro/tests/paddle_orientation_fix.py`):
+
+```
+cnocr    stacked   5/7 exact,  93.3% characters
+         sideways  0/7 exact,   6.7% characters
+ppocr    stacked   0/7 exact,  13.3% characters
+         sideways  7/7 exact, 100.0% characters
+```
+
+On the real webtoon both engines return the same 25 blocks, because
+CnOCR was already correct there — its three "vertical" blocks are
+single large title-logo glyphs (福 / 茶 / 露), not columns.
+
 ## Typography
 
 The overlay text is fitted to the artwork's **actual lettering**, not to
@@ -166,6 +208,8 @@ selector works:
   a page indicator.
 - **Automatic OCR** — runs the local mokuro Python environment over the
   pages in a background job. No cloud API, no key.
+- **Two OCR engines** — pick CnOCR (fast) or PP-OCRv5 (accurate, and the
+  one that reads vertical columns properly). See below.
 - **OCR transcript** — every detected section on its own line, grouped by
   page, as real selectable text.
 - **Character-level selection** — every character is its own element, so you

@@ -123,6 +123,10 @@
             <option value="zh">Chinese</option>
             <option value="ja">Japanese</option>
           </select>
+          <select id="recognizerSelect" aria-label="OCR engine">
+            <option value="cnocr">CnOCR (fast)</option>
+            <option value="paddle">PP-OCRv5 (accurate, vertical)</option>
+          </select>
           <button id="runOcr" class="btn btn-primary">RUN OCR</button>
         </div>
         <div id="ocrProgress" class="ocr-progress" role="status" aria-live="polite"></div>

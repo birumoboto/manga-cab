@@ -21,7 +21,7 @@ import os from "os";
 import { fileURLToPath } from "url";
 import { VolumeStore, isImageFile, naturalCompare } from "./store.js";
 import { extractZip } from "./unzip.js";
-import { ocrVolume, LANGUAGES, MOKURO_PYTHON } from "./ocr.js";
+import { ocrVolume, LANGUAGES, RECOGNIZERS, MOKURO_PYTHON } from "./ocr.js";
 import { fixFiles, fixFilename } from "./encoding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -186,6 +186,7 @@ app.get("/api/ocr/status", (req, res) => {
   res.json({
     available: fs.existsSync(MOKURO_PYTHON),
     languages: LANGUAGES,
+    recognizers: RECOGNIZERS,
     jobs: Object.fromEntries(ocrJobs),
   });
 });
@@ -193,9 +194,13 @@ app.get("/api/ocr/status", (req, res) => {
 app.post("/api/volumes/:id/ocr", async (req, res) => {
   const id = req.params.id;
   const lang = String(req.body?.lang || "zh").toLowerCase();
+  const recognizer = String(req.body?.recognizer || "").toLowerCase();
 
   if (!LANGUAGES.includes(lang)) {
     return res.status(400).json({ error: `unsupported language: ${lang}` });
+  }
+  if (recognizer && !RECOGNIZERS.some((r) => r.id === recognizer)) {
+    return res.status(400).json({ error: `unsupported recognizer: ${recognizer}` });
   }
   if (!fs.existsSync(MOKURO_PYTHON)) {
     return res.status(503).json({ error: "mokuro is not installed on this machine" });
@@ -215,6 +220,7 @@ app.post("/api/volumes/:id/ocr", async (req, res) => {
     id: `${id}-${Date.now()}`,
     volumeId: id,
     lang,
+    recognizer: recognizer || "cnocr",
     status: "running",
     startedAt: Date.now(),
     finishedAt: null,
@@ -228,7 +234,7 @@ app.post("/api/volumes/:id/ocr", async (req, res) => {
   // Run detached from the request.
   (async () => {
     try {
-      const { result } = await ocrVolume(store, id, { lang });
+      const { result } = await ocrVolume(store, id, { lang, recognizer });
 
       const updated = await store.read(id);
       updated.mokuro = result;

@@ -27,10 +27,26 @@ const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS || 30 * 60 * 1000);
 export const LANGUAGES = ["ja", "zh"];
 
 /**
+ * Recognizer backends, and what each is good at.
+ *
+ * cnocr  the default for Chinese. Fast, but drops characters from a
+ *        vertical column and reads the first character or two of a
+ *        column that holds several.
+ * paddle PP-OCRv5. Slower, but reads vertical columns exactly — on
+ *        columns with known text it got 7/7 exact and 100% character
+ *        accuracy, against CnOCR's 5/7 and 93.3%.
+ * manga-ocr  the default for Japanese.
+ */
+export const RECOGNIZERS = [
+  { id: "cnocr", label: "CnOCR (fast)" },
+  { id: "paddle", label: "PP-OCRv5 (accurate, vertical)" },
+];
+
+/**
  * Run mokuro OCR over a directory of images.
  * Returns the parsed .mokuro object.
  */
-export function runMokuro(imageDir, { lang = "zh", timeoutMs = OCR_TIMEOUT_MS } = {}) {
+export function runMokuro(imageDir, { lang = "zh", recognizer = "", timeoutMs = OCR_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(MOKURO_PYTHON)) {
       return reject(new Error(`mokuro python not found at ${MOKURO_PYTHON}`));
@@ -43,6 +59,7 @@ export function runMokuro(imageDir, { lang = "zh", timeoutMs = OCR_TIMEOUT_MS } 
       "--disable_confirmation",
       "--legacy_html", "False",
     ];
+    if (recognizer) args.push("--recognizer", recognizer);
 
     const child = spawn(MOKURO_PYTHON, args, {
       cwd: MOKURO_DIR,
@@ -102,7 +119,7 @@ export function runMokuro(imageDir, { lang = "zh", timeoutMs = OCR_TIMEOUT_MS } 
  * directory of images and writes <dir>.mokuro alongside it, so we point it
  * at the pages directory directly and clean up afterwards.
  */
-export async function ocrVolume(store, id, { lang = "zh" } = {}) {
+export async function ocrVolume(store, id, { lang = "zh", recognizer = "" } = {}) {
   const meta = await store.read(id);
   if (!meta) throw new Error("volume not found");
   if (!meta.pageCount) throw new Error("volume has no pages");
@@ -116,7 +133,7 @@ export async function ocrVolume(store, id, { lang = "zh" } = {}) {
   const ocrCacheDir = path.join(store.volumeDir(id), "_ocr");
 
   try {
-    const result = await runMokuro(pagesDir, { lang });
+    const result = await runMokuro(pagesDir, { lang, recognizer });
     return { meta, result, outputPath };
   } catch (err) {
     // mokuro may also have written a per-page cache dir; leave it, it makes

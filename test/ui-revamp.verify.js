@@ -205,6 +205,10 @@ async function main() {
       modes,
       runOcr: !!document.getElementById('runOcr'),
       lang: !!document.getElementById('langSelect'),
+      recognizer: !!document.getElementById('recognizerSelect'),
+      recognizerOptions: Array.from(
+        document.getElementById('recognizerSelect')?.options || []
+      ).map((o) => o.value),
     };
   })()`);
   check("the OCR sheet opens", !sheet.hidden && sheet.open, JSON.stringify(sheet));
@@ -215,6 +219,10 @@ async function main() {
   check("the mode buttons are good tap targets",
     sheet.modes.every((m) => m.h >= 40), JSON.stringify(sheet.modes.map((m) => `${m.w}x${m.h}`)));
   check("the sheet has RUN OCR and a language picker", sheet.runOcr && sheet.lang);
+  check("the sheet has an OCR engine picker",
+    sheet.recognizer && sheet.recognizerOptions.includes("cnocr")
+    && sheet.recognizerOptions.includes("paddle"),
+    JSON.stringify(sheet.recognizerOptions));
   await ev("window.toggleSheet()");
   await sleep(400);
 

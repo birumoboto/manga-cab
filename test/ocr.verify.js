@@ -64,6 +64,18 @@ async function main() {
   const status = await (await fetch(`${BASE}/api/ocr/status`)).json();
   check("ocr reports mokuro available", status.available === true);
   check("ocr lists supported languages", Array.isArray(status.languages) && status.languages.includes("zh"), JSON.stringify(status.languages));
+  check("ocr lists the recognizer backends",
+    Array.isArray(status.recognizers) && status.recognizers.some((r) => r.id === "cnocr")
+    && status.recognizers.some((r) => r.id === "paddle"),
+    JSON.stringify(status.recognizers?.map((r) => r.id)));
+
+  // An unknown engine must be rejected rather than silently ignored.
+  const badRec = await fetch(`${BASE}/api/volumes/${id}/ocr`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lang: "zh", recognizer: "nonsense" }),
+  });
+  check("unsupported recognizer rejected", badRec.status === 400, `HTTP ${badRec.status}`);
 
   // ── Kick off OCR ─────────────────────────────────────────────
   const startRes = await fetch(`${BASE}/api/volumes/${id}/ocr`, {
