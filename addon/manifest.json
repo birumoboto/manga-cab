@@ -1,0 +1,32 @@
+{
+  "manifest_version": 2,
+  "name": "MANGA.CAB Reader",
+  "version": "1.0.0",
+  "description": "Tap a speech bubble on a MANGA.CAB webtoon and read it.",
+  "author": "bing",
+  "icons": {},
+
+  "permissions": [
+    "http://bings-macbook-pro-2.tailb92b8e.ts.net/*",
+    "http://127.0.0.1/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://bings-macbook-pro-2.tailb92b8e.ts.net/*",
+        "*://127.0.0.1/*"
+      ],
+      "js": ["manga-cab-reader.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "manga-cab-reader@bing.local",
+      "strict_min_version": "115.0"
+    }
+  }
+}

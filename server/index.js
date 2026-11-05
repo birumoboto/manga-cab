@@ -58,6 +58,16 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
+// The Firefox add-on, served so it can be downloaded from the app
+// itself rather than having to find the files on the server.
+app.use("/addon", express.static(path.join(ROOT, "addon"), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res) {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  },
+}));
+
 // ── Upload handling ────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),

@@ -82,6 +82,23 @@ async function main() {
   check("the served CSS contains the transcript styles",
     css.includes(".transcript-line") && css.includes(".ocr-line.placed"));
 
+  // ── The Firefox add-on must be downloadable from the app ────
+  const manifest = await fetch(`${BASE}/addon/manifest.json`);
+  check("the add-on manifest is served", manifest.status === 200,
+    `status=${manifest.status}`);
+  const m = await manifest.json();
+  check("the manifest is valid", m.manifest_version === 2 && Array.isArray(m.content_scripts),
+    `manifest_version=${m.manifest_version}`);
+  const script = await fetch(`${BASE}/addon/${m.content_scripts[0].js[0]}`);
+  check("the add-on script is served", script.status === 200, `status=${script.status}`);
+  const src = await script.text();
+  check("the add-on uses the MANGA_CAB API",
+    src.includes("MANGA_CAB") && src.includes("hitTest"), "uses hitTest");
+
+  // ── The add-on download links must be in the page ───────────
+  check("the page links to the add-on manifest",
+    html.includes('id="addonManifest"') && html.includes('id="addonScript"'));
+
   console.log("");
   console.log(`${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

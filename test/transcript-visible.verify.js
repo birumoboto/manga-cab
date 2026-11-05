@@ -87,6 +87,13 @@ async function main() {
       return r.result.value;
     };
 
+    // The transcript button lives in the READER's header, so open a
+    // volume first — otherwise the whole reader screen is display:none
+    // and every measurement is 0x0.
+    const { volumes } = await (await fetch(`${BASE}/api/volumes`)).json();
+    await ev(`window.openVolume('${volumes[0].id}')`);
+    await sleep(1600);
+
     const btn = await ev(`(() => {
       const b = document.getElementById('textToggle');
       if (!b) return { missing: true };
@@ -107,16 +114,21 @@ async function main() {
     check("the button exists", !btn.missing, JSON.stringify(btn));
     if (btn.missing) continue;
 
-    // The drawer also carries a VIEW TRANSCRIPT button — two entry points,
-    // so the feature is findable even if the top-bar icon is missed.
+    // The OCR sheet is the other entry point — it holds VIEW TRANSCRIPT.
+    await ev("window.toggleSheet()");
+    await sleep(500);
     const drawerBtn = await ev(`(() => {
       const b = document.getElementById('textPanelBtn');
       if (!b) return { missing: true };
       const r = b.getBoundingClientRect();
       return { text: b.textContent.trim(), w: Math.round(r.width), h: Math.round(r.height) };
     })()`);
-    check("the drawer has a VIEW TRANSCRIPT button",
-      !drawerBtn.missing && /TRANSCRIPT/i.test(drawerBtn.text), JSON.stringify(drawerBtn));
+    check("the sheet has a VIEW TRANSCRIPT button",
+      !drawerBtn.missing && /TRANSCRIPT/i.test(drawerBtn.text) && drawerBtn.h >= 40,
+      JSON.stringify(drawerBtn));
+    await ev("window.toggleSheet()");
+    await sleep(350);
+
     check("the button is visible", btn.display !== "none" && btn.visibility === "visible" && btn.opacity !== "0",
       `display=${btn.display} visibility=${btn.visibility} opacity=${btn.opacity}`);
     check("the button is inside the viewport", btn.inViewport,

@@ -29,15 +29,15 @@ const url = (p) => `${BASE}${p}`;
 const els = {
   app: $("app"),
   reader: $("reader"),
+  readerScreen: $("readerScreen"),
   pages: $("pages"),
   empty: $("empty"),
   emptyUpload: $("emptyUpload"),
   title: $("volumeTitle"),
   meta: $("volumeMeta"),
   library: $("library"),
-  libraryBtn: $("libraryBtn"),
-  libraryClose: $("libraryClose"),
-  scrim: $("scrim"),
+  libraryUploadBtn: $("libraryUploadBtn"),
+  backBtn: $("backBtn"),
   volumeList: $("volumeList"),
   dropZone: $("dropZone"),
   fileInput: $("fileInput"),
@@ -52,6 +52,10 @@ const els = {
   transcript: $("transcript"),
   transcriptClose: $("transcriptClose"),
   transcriptBody: $("transcriptBody"),
+  ocrSheet: $("ocrSheet"),
+  ocrSheetHandle: $("ocrSheetHandle"),
+  ocrSheetLabel: $("ocrSheetLabel"),
+  modeHint: $("modeHint"),
   fsBtn: $("fsBtn"),
   mokuroInput: $("mokuroInput"),
   pickMokuro: $("pickMokuro"),
@@ -65,6 +69,10 @@ const els = {
 
 const state = {
   volume: null,
+  // "off"  — no overlay at all
+  // "tap"  — transparent overlay; characters are hit-tested by tap
+  // "read" — text is drawn visibly so it can be selected and read
+  ocrMode: "tap",
   ocr: false,
   ocrData: null,
   visible: new Set(),
@@ -87,29 +95,39 @@ const state = {
 const OCR_FONT_FACTOR = 0.78;
 
 // ═══════════════════════════════════════════════════════════════
-// Library drawer
+// Navigation — the shelf and the reader are two full screens.
+//
+// The shelf is the "main menu". The reader has a permanent, unmissable
+// BACK button in its own header, so getting back is always one tap and
+// never depends on finding a hidden menu.
 // ═══════════════════════════════════════════════════════════════
 
-function openLibrary() {
-  els.library.classList.add("open");
-  els.scrim.hidden = false;
-  requestAnimationFrame(() => els.scrim.classList.add("show"));
+function showShelf() {
+  els.app.classList.remove("view-reader");
+  els.app.classList.add("view-library");
+  closeSheet();
+  toggleTranscript(false);
+  // The progress rail and page indicator belong to the reader. Hide them
+  // so they do not float over the shelf.
+  els.rail.hidden = true;
+  els.indicator.hidden = true;
   loadVolumes();
 }
 
-function closeLibrary() {
-  els.library.classList.remove("open");
-  els.scrim.classList.remove("show");
-  setTimeout(() => { els.scrim.hidden = true; }, 220);
+function showReader() {
+  els.app.classList.remove("view-library");
+  els.app.classList.add("view-reader");
 }
 
-els.libraryBtn.addEventListener("click", openLibrary);
-els.libraryClose.addEventListener("click", closeLibrary);
-els.scrim.addEventListener("click", closeLibrary);
-els.emptyUpload.addEventListener("click", () => {
-  openLibrary();
-  setTimeout(() => els.pickFolder.click(), 250);
+els.backBtn.addEventListener("click", showShelf);
+els.emptyUpload.addEventListener("click", showShelf);
+els.libraryUploadBtn.addEventListener("click", () => els.pickFolder.click());
+
+// The Android / iOS back gesture should also return to the shelf.
+window.addEventListener("popstate", () => {
+  if (els.app.classList.contains("view-reader")) showShelf();
 });
+history.pushState({ view: "shelf" }, "", location.href);
 
 // ═══════════════════════════════════════════════════════════════
 // Volume list
@@ -192,7 +210,7 @@ async function openVolume(id) {
   loadOcr(id);
 
   els.reader.scrollTop = 0;
-  closeLibrary();
+  showReader();
   renderVolumes(await (await fetch(url("/api/volumes"))).json().then((d) => d.volumes || []));
 }
 
@@ -321,6 +339,78 @@ function setOcr(on) {
   else clearOcr();
 }
 
+// ── OCR display modes ───────────────────────────────────────────
+//
+// "off"  — no overlay. Pure artwork.
+// "tap"  — the overlay exists but is transparent. Tapping a character
+//          highlights it. Scrolling over the artwork always works,
+//          because the layer is pointer-events: none.
+// "read" — the text is drawn visibly on a readable background, so you
+//          can select it, copy it, or have an add-on read it back.
+//
+// The mode is a separate axis from the on/off toggle: the toggle still
+// controls whether the overlay exists at all.
+
+const OCR_MODES = {
+  off: {
+    label: "OFF",
+    hint: "No text layer. The artwork is clean.",
+  },
+  tap: {
+    label: "TAP",
+    hint: "The text is invisible but tappable — tap a bubble to read it. Scrolling always works.",
+  },
+  read: {
+    label: "READ",
+    hint: "The text is drawn on the page, so you can select it with your finger, copy it, or use a reading add-on.",
+  },
+};
+
+function setOcrMode(mode) {
+  if (!OCR_MODES[mode]) return;
+  state.ocrMode = mode;
+
+  for (const btn of document.querySelectorAll(".mode-btn")) {
+    const on = btn.dataset.mode === mode;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-checked", on ? "true" : "false");
+  }
+  els.modeHint.textContent = OCR_MODES[mode].hint;
+
+  // "off" turns the layer off entirely; the others keep it on.
+  setOcr(mode !== "off");
+
+  // Reflect the state on the top-bar toggle too.
+  els.ocrToggle.setAttribute("aria-pressed", mode === "off" ? "false" : "true");
+}
+
+for (const btn of document.querySelectorAll(".mode-btn")) {
+  btn.addEventListener("click", () => setOcrMode(btn.dataset.mode));
+}
+
+// ── The bottom sheet ────────────────────────────────────────────
+
+function openSheet() {
+  els.ocrSheet.hidden = false;
+  requestAnimationFrame(() => els.ocrSheet.classList.add("open"));
+  els.ocrSheetHandle.setAttribute("aria-expanded", "true");
+  els.ocrSheetLabel.textContent = "CLOSE";
+}
+
+function closeSheet() {
+  els.ocrSheet.classList.remove("open");
+  els.ocrSheetHandle.setAttribute("aria-expanded", "false");
+  els.ocrSheetLabel.textContent = "OCR TEXT";
+  setTimeout(() => { els.ocrSheet.hidden = true; }, 250);
+}
+
+function toggleSheet() {
+  if (els.ocrSheet.classList.contains("open")) closeSheet();
+  else openSheet();
+}
+
+els.ocrSheetHandle.addEventListener("click", toggleSheet);
+
 function clearOcr() {
   state.chars = [];
   for (const page of els.pages.children) {
@@ -347,6 +437,10 @@ function applyOcr() {
     const layer = wrap.querySelector(".ocr-layer");
     if (!layer) continue;
     layer.classList.add("on");
+    // The display mode changes how the text is painted and whether the
+    // layer takes pointer events.
+    layer.classList.toggle("mode-read", state.ocrMode === "read");
+    layer.classList.toggle("mode-tap", state.ocrMode === "tap");
     layer.innerHTML = "";
 
     const page = byName.get(wrap.dataset.file) || pages[Number(wrap.dataset.index)];
@@ -355,8 +449,10 @@ function applyOcr() {
     const img = wrap.querySelector("img");
     const W = page.img_width || img.naturalWidth || 1;
     const H = page.img_height || img.naturalHeight || 1;
+    const pageIndex = Number(wrap.dataset.index);
 
-    for (const block of page.blocks) {
+    for (let blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
+      const block = page.blocks[blockIndex];
       const [x0, y0, x1, y1] = block.box || [];
       if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) continue;
 
@@ -428,13 +524,23 @@ function applyOcr() {
           line.classList.add("placed");
         }
 
+        // Index of this line inside its block, and the page it is on.
+        line.dataset.ocrLine = String(i);
+        line.dataset.ocrPage = String(pageIndex);
+
         const spans = buildCharSpans(lineText);
         line.append(...spans);
         for (const s of spans) {
-          if (s.classList?.contains("ocr-char")) state.chars.push(s);
+          if (s.classList?.contains("ocr-char")) {
+            s.dataset.ocrPage = String(pageIndex);
+            s.dataset.ocrLine = String(i);
+            s.dataset.ocrBlock = String(blockIndex);
+            state.chars.push(s);
+          }
         }
         box.appendChild(line);
       }
+      box.dataset.ocrBlock = String(blockIndex);
       layer.appendChild(box);
     }
   }
@@ -533,7 +639,12 @@ function baseName(p) {
   return parts[parts.length - 1];
 }
 
-els.ocrToggle.addEventListener("click", () => setOcr(!state.ocr));
+// The top-bar OCR button cycles the display modes: off → tap → read.
+els.ocrToggle.addEventListener("click", () => {
+  const order = ["off", "tap", "read"];
+  const next = order[(order.indexOf(state.ocrMode) + 1) % order.length];
+  setOcrMode(next);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // Uploads
@@ -824,6 +935,10 @@ function onPointerUp(e) {
   // A long press is the browser's own selection gesture — leave it alone.
   if (dt > TAP_TIME) return;
 
+  // In READ mode the layer takes pointer events and the browser handles
+  // selection natively, so we must not hijack the tap.
+  if (state.ocrMode === "read") return;
+
   handleCharTap(e.clientX, e.clientY);
 }
 
@@ -917,8 +1032,6 @@ function renderTranscript() {
 
 els.textToggle.addEventListener("click", () => toggleTranscript());
 els.textPanelBtn.addEventListener("click", () => {
-  // Close the library first so the panel is not hidden behind the drawer.
-  closeLibrary();
   toggleTranscript(true);
 });
 els.transcriptClose.addEventListener("click", () => toggleTranscript(false));
@@ -941,6 +1054,132 @@ els.transcriptBody.addEventListener("click", (e) => {
   showCopyHint(ch);
 });
 
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * Add-on API
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * A browser add-on (Firefox extension, userscript, etc.) needs to find
+ * the OCR characters under a point and read them back. The overlay is
+ * `pointer-events: none` in tap mode — deliberately, so that dragging
+ * over the artwork scrolls the page instead of selecting text — which
+ * means `document.elementFromPoint()` will NOT return a character.
+ *
+ * So we expose a small, stable API. From an add-on's console:
+ *
+ *     MANGA_CAB.hitTest(x, y)      // the character under a point
+ *     MANGA_CAB.getCharacters()    // every character, with its rect
+ *     MANGA_CAB.getLines()         // every OCR section (a line of text)
+ *     MANGA_CAB.getTranscript()    // the whole volume, grouped by page
+ *
+ * Every character element also carries data attributes:
+ *
+ *     data-ocr-char   the character itself
+ *     data-ocr-page   0-based page index
+ *     data-ocr-block  0-based text block index within the page
+ *     data-ocr-line   0-based line index within the block
+ *
+ * so an add-on can find them with a plain CSS selector, and in READ mode
+ * `document.elementFromPoint()` works too.
+ */
+
+const MANGA_CAB = {
+  /** The character element under a viewport point, or null. */
+  hitTest(x, y) {
+    return charAtPoint(x, y);
+  },
+
+  /** Every character element currently rendered, with its rect. */
+  getCharacters() {
+    return state.chars.map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        char: el.textContent,
+        text: el.textContent,
+        page: Number(el.dataset.ocrPage),
+        block: Number(el.dataset.ocrBlock),
+        line: Number(el.dataset.ocrLine),
+        el,
+        x: r.left, y: r.top, width: r.width, height: r.height,
+        centerX: r.left + r.width / 2,
+        centerY: r.top + r.height / 2,
+      };
+    });
+  },
+
+  /**
+   * Every OCR section (one detected line), with its characters and rect.
+   * This is what an add-on wants: the text of a speech bubble, not
+   * individual characters.
+   */
+  getLines() {
+    const out = [];
+    for (const box of document.querySelectorAll(".ocr-box")) {
+      for (const line of box.querySelectorAll(".ocr-line")) {
+        const r = line.getBoundingClientRect();
+        out.push({
+          text: line.textContent,
+          page: Number(line.dataset.ocrPage),
+          block: Number(box.dataset.ocrBlock),
+          line: Number(line.dataset.ocrLine),
+          el: line,
+          x: r.left, y: r.top, width: r.width, height: r.height,
+        });
+      }
+    }
+    return out;
+  },
+
+  /** The whole volume's OCR, grouped by page. */
+  getTranscript() {
+    const data = state.ocrData;
+    if (!data?.pages) return [];
+    return data.pages.map((page, i) => ({
+      page: i,
+      sections: (page.blocks || []).flatMap((b) =>
+        (b.lines || [])
+          .filter((l) => l.trim())
+          .map((text, li) => ({
+            text,
+            vertical: !!b.vertical,
+            box: b.box,
+            fontSize: b.font_size,
+            line: li,
+          }))
+      ),
+    }));
+  },
+
+  /** The current display mode: "off" | "tap" | "read". */
+  getMode() {
+    return state.ocrMode;
+  },
+
+  /** Switch display mode from an add-on. */
+  setMode(mode) {
+    setOcrMode(mode);
+    return state.ocrMode;
+  },
+
+  /** Force the overlay on or off. */
+  setOverlay(on) {
+    setOcr(!!on);
+    return state.ocr;
+  },
+
+  /** Is the reader currently showing a volume? */
+  isReading() {
+    return !!state.volume;
+  },
+
+  /** The volume currently open, or null. */
+  getVolume() {
+    return state.volume ? { id: state.volume.id, title: state.volume.title, pageCount: state.volume.pageCount } : null;
+  },
+};
+
+window.MANGA_CAB = MANGA_CAB;
+
 // ═══════════════════════════════════════════════════════════════
 // Fullscreen
 // ═══════════════════════════════════════════════════════════════
@@ -958,7 +1197,11 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea")) return;
 
   if (e.key === "Escape") {
-    if (els.library.classList.contains("open")) closeLibrary();
+    // Escape backs out one layer at a time: sheet, then transcript, then
+    // the reader itself.
+    if (els.ocrSheet.classList.contains("open")) { closeSheet(); return; }
+    if (!els.transcript.hidden) { toggleTranscript(false); return; }
+    if (els.app.classList.contains("view-reader")) { showShelf(); return; }
     return;
   }
   if (e.key === "ArrowRight" || e.key === "PageDown") {
@@ -971,15 +1214,20 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "End") els.reader.scrollTo({ top: els.reader.scrollHeight, behavior: "smooth" });
   if (e.key === "o" || e.key === "O") setOcr(!state.ocr);
   if (e.key === "t" || e.key === "T") toggleTranscript();
+  if (e.key === "b" || e.key === "B") showShelf();
 });
 
 // Expose a small surface for the headless test harness.
 window.openVolume = openVolume;
 window.setOcr = setOcr;
+window.setOcrMode = setOcrMode;
+window.showShelf = showShelf;
+window.showReader = showReader;
 window.attachMokuro = attachMokuro;
 window.toggleTranscript = toggleTranscript;
+window.toggleSheet = toggleSheet;
 window.state = state;
 
-// Start with the library open so the upload path is obvious.
-loadVolumes();
-openLibrary();
+// Start on the shelf — that is the main menu.
+setOcrMode("tap");
+showShelf();

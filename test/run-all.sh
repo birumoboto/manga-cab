@@ -17,6 +17,8 @@ run() {
   fi
 }
 
+run "firefox add-on (tap to read)"     node test/addon.verify.js
+run "ui revamp (menu + ocr modes + api)" node test/ui-revamp.verify.js
 run "cache policy (no stale shell)"    node test/cache.verify.js
 run "transcript button (4 devices)"       node test/transcript-visible.verify.js
 run "ocr transcript (one section per line)" node test/transcript.verify.js

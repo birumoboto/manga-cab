@@ -131,8 +131,13 @@ async function main() {
 
   console.log("── shell ──");
   check("page loads", (await ev("document.title")) === "MANGA.CAB — Webtoon Reader", String(await ev("document.title")));
-  check("library drawer opens on load", await ev("document.getElementById('library').classList.contains('open')"));
-  check("empty state visible", await ev("!document.getElementById('empty').classList.contains('hidden')"));
+  // The shelf is now a full screen, not a drawer.
+  check("the shelf is the starting screen",
+    await ev("document.getElementById('app').classList.contains('view-library')"));
+  check("the shelf is visible",
+    await ev("getComputedStyle(document.getElementById('library')).display !== 'none'"));
+  check("the reader screen starts hidden",
+    await ev("getComputedStyle(document.getElementById('readerScreen')).display === 'none'"));
   check("dropzone present", await ev("!!document.getElementById('dropZone')"));
   check("folder picker present", await ev("!!document.getElementById('folderInput') && document.getElementById('folderInput').hasAttribute('webkitdirectory')"));
 
@@ -216,7 +221,8 @@ async function main() {
   // ── OCR layer ────────────────────────────────────────────
   console.log("");
   console.log("── ocr layer ──");
-  await ev("document.getElementById('ocrToggle').click()");
+  // The top-bar button cycles the display modes (off → tap → read).
+  await ev("window.setOcrMode('tap')");
   await sleep(500);
   check("ocr toggle pressed", (await ev("document.getElementById('ocrToggle').getAttribute('aria-pressed')")) === "true");
   check("ocr layer element per page", (await ev("document.querySelectorAll('.ocr-layer').length")) === 6);

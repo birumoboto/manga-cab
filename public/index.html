@@ -11,52 +11,29 @@
 </head>
 <body>
 
-<div id="app">
+<div id="app" class="view-library">
 
-  <!-- ── Top bar ────────────────────────────────────────────── -->
-  <header class="topbar">
-    <button id="libraryBtn" class="icon-btn" aria-label="Open library" title="Library">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-        <path d="M4 4h4v16H4zM10 4h4v16h-4zM16 4h4v16h-4z"/>
-      </svg>
-    </button>
-    <div class="title-wrap">
-      <h1 id="volumeTitle" class="volume-title">MANGA.CAB</h1>
-      <span id="volumeMeta" class="volume-meta">webtoon reader</span>
-    </div>
-    <div class="topbar-right">
-      <button id="ocrToggle" class="icon-btn" aria-pressed="false" aria-label="Toggle OCR text layer" title="OCR text layer">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <path d="M4 5h16v2H4zM4 11h16v2H4zM4 17h10v2H4z"/>
-        </svg>
-      </button>
-      <button id="textToggle" class="icon-btn" aria-pressed="false" aria-label="Show OCR transcript" title="OCR transcript (T)">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <path d="M5 3h8l6 6v12H5zM13 3v6h6M8 13h8M8 17h5"/>
-        </svg>
-      </button>
-      <button id="fsBtn" class="icon-btn" aria-label="Toggle fullscreen" title="Fullscreen">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <path d="M4 4h6v2H6v4H4zM20 4v6h-2V6h-4V4zM4 20v-6h2v4h4v2zM20 20h-6v-2h4v-4h2z"/>
-        </svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- ── Library drawer ─────────────────────────────────────── -->
-  <aside id="library" class="library" aria-label="Library">
-    <div class="library-head">
-      <h2>LIBRARY</h2>
-      <button id="libraryClose" class="icon-btn small" aria-label="Close library">&times;</button>
-    </div>
+  <!-- ══════════════════════════════════════════════════════════
+       SHELF — the main menu. A full screen, not a drawer, so it is
+       always one tap away and you always know where "home" is.
+       ══════════════════════════════════════════════════════════ -->
+  <section id="library" class="library open" aria-label="Library">
+    <header class="library-head">
+      <div class="brand">
+        <h1 class="brand-name">MANGA<span class="brand-dot">.CAB</span></h1>
+        <p class="brand-sub">your webtoon shelf</p>
+      </div>
+      <button id="libraryUploadBtn" class="btn btn-primary head-btn">ADD</button>
+    </header>
 
     <div class="library-body">
       <section class="lib-section">
-        <h3>UPLOAD</h3>
         <div id="dropZone" class="dropzone" tabindex="0" role="button"
              aria-label="Upload a folder of images or a zip archive">
-          <div class="dz-icon">&#128193;</div>
-          <p class="dz-main">Drop a folder of JPGs here</p>
+          <div class="dz-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </div>
+          <p class="dz-main">Drop a folder of JPGs</p>
           <p class="dz-sub">or click to choose &middot; .zip / .cbz also OK</p>
         </div>
         <input id="fileInput" type="file" multiple accept="image/*,.zip,.cbz" hidden>
@@ -73,10 +50,74 @@
       </section>
 
       <section class="lib-section">
-        <h3>OCR TEXT LAYER</h3>
-        <p class="lib-hint">Run OCR over the pages to make the dialogue
-          <em>selectable</em>. Toggle the text layer with the <strong>O</strong>
-          key or the button in the top bar.</p>
+        <h3>YOUR SHELF</h3>
+        <ul id="volumeList" class="volume-list"></ul>
+      </section>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       READER — the webtoon view.
+       ══════════════════════════════════════════════════════════ -->
+  <section id="readerScreen" class="reader-screen" aria-label="Reader">
+    <header class="topbar">
+      <!-- Unmissable way back to the shelf. -->
+      <button id="backBtn" class="back-btn" aria-label="Back to shelf" title="Back to shelf">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7"/>
+        </svg>
+        <span class="back-label">SHELF</span>
+      </button>
+      <div class="title-wrap">
+        <h1 id="volumeTitle" class="volume-title">MANGA.CAB</h1>
+        <span id="volumeMeta" class="volume-meta">webtoon reader</span>
+      </div>
+      <div class="topbar-right">
+        <button id="ocrToggle" class="icon-btn" aria-pressed="false" aria-label="Toggle OCR text layer" title="OCR text layer">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M4 5h16v2H4zM4 11h16v2H4zM4 17h10v2H4z"/>
+          </svg>
+        </button>
+        <button id="textToggle" class="icon-btn" aria-pressed="false" aria-label="Show OCR transcript" title="OCR transcript (T)">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M5 3h8l6 6v12H5zM13 3v6h6M8 13h8M8 17h5"/>
+          </svg>
+        </button>
+        <button id="fsBtn" class="icon-btn" aria-label="Toggle fullscreen" title="Fullscreen">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M4 4h6v2H6v4H4zM20 4v6h-2V6h-4V4zM4 20v-6h2v4h4v2zM20 20h-6v-2h4v-4h2z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="reader" class="reader" tabindex="-1">
+      <div id="pages" class="pages"></div>
+      <div id="empty" class="empty">
+        <div class="empty-art" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40"><path d="M4 3h11l5 5v13H4zM15 3v5h5M7 12h10M7 16h7"/></svg>
+        </div>
+        <h2>NO VOLUME OPEN</h2>
+        <p>Pick one from your shelf to start reading.</p>
+        <button id="emptyUpload" class="btn btn-primary">BACK TO SHELF</button>
+      </div>
+    </main>
+
+    <!-- ── OCR sheet ────────────────────────────────────────────
+         Slides up from the bottom. Holds the OCR display mode, the
+         language, RUN OCR and the transcript. -->
+    <div id="ocrSheet" class="sheet" hidden aria-label="OCR settings">
+      <div class="sheet-grab" aria-hidden="true"></div>
+      <div class="sheet-body">
+        <h3>OCR TEXT</h3>
+
+        <div class="mode-picker" role="radiogroup" aria-label="OCR display mode">
+          <button class="mode-btn" data-mode="off" role="radio" aria-checked="false">OFF</button>
+          <button class="mode-btn" data-mode="tap" role="radio" aria-checked="true">TAP</button>
+          <button class="mode-btn" data-mode="read" role="radio" aria-checked="false">READ</button>
+        </div>
+        <p id="modeHint" class="lib-hint"></p>
+
         <div class="ocr-controls">
           <select id="langSelect" aria-label="Source language">
             <option value="zh">Chinese</option>
@@ -85,29 +126,49 @@
           <button id="runOcr" class="btn btn-primary">RUN OCR</button>
         </div>
         <div id="ocrProgress" class="ocr-progress" role="status" aria-live="polite"></div>
+
         <div class="btn-row">
           <button id="pickMokuro" class="btn">ATTACH .MOKURO</button>
-        </div>
-        <input id="mokuroInput" type="file" accept=".mokuro,application/json" hidden>
-        <div class="btn-row">
           <button id="textPanelBtn" class="btn">VIEW TRANSCRIPT</button>
         </div>
-        <p class="lib-hint">The transcript lists every detected text
-          section on its own line, grouped by page &mdash; readable and
-          copyable without the artwork.</p>
-      </section>
+        <input id="mokuroInput" type="file" accept=".mokuro,application/json" hidden>
 
-      <section class="lib-section">
-        <h3>VOLUMES</h3>
-        <ul id="volumeList" class="volume-list"></ul>
-      </section>
+        <details class="addon-help">
+          <summary>For a Firefox add-on</summary>
+          <p>Every character is a real DOM element, so an add-on can find
+            and read it. Tap mode keeps the overlay transparent (scrolling
+            always wins); read mode draws the text so you can select it.</p>
+          <p>A ready-to-load add-on is included &mdash; download it, then in
+            Firefox open <strong>about:debugging</strong> &rarr; This Firefox
+            &rarr; Load Temporary Add-on &rarr; pick the
+            <code>manifest.json</code>.</p>
+          <p class="addon-links">
+            <a id="addonManifest" href="addon/manifest.json" download>manifest.json</a>
+            &middot;
+            <a id="addonScript" href="addon/manga-cab-reader.js" download>manga-cab-reader.js</a>
+          </p>
+          <p>From the add-on console:</p>
+          <pre class="code">MANGA_CAB.hitTest(x, y)   // char under a point
+MANGA_CAB.getCharacters()   // every char + rect
+MANGA_CAB.getLines()        // every OCR section
+MANGA_CAB.getTranscript()   // whole volume, by page</pre>
+          <p>Each character also carries <code>data-ocr-char</code>,
+            <code>data-ocr-page</code> and <code>data-ocr-line</code>, so a
+            plain <code>document.elementFromPoint()</code> works in read
+            mode.</p>
+        </details>
+      </div>
     </div>
-  </aside>
-  <div id="scrim" class="scrim" hidden></div>
 
-  <!-- ── OCR transcript panel ────────────────────────────────── -->
-  <!-- Lists every OCR section on its own line, grouped by page, so the
-       whole text of a volume can be read (and selected) in one place. -->
+    <button id="ocrSheetHandle" class="sheet-handle" aria-expanded="false" aria-controls="ocrSheet">
+      <span class="grip" aria-hidden="true"></span>
+      <span id="ocrSheetLabel">OCR TEXT</span>
+    </button>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       OCR transcript panel — every detected section on its own line.
+       ══════════════════════════════════════════════════════════ -->
   <aside id="transcript" class="transcript" aria-label="OCR transcript" hidden>
     <div class="transcript-head">
       <h2>OCR TRANSCRIPT</h2>
@@ -115,17 +176,6 @@
     </div>
     <div id="transcriptBody" class="transcript-body"></div>
   </aside>
-
-  <!-- ── Reader ─────────────────────────────────────────────── -->
-  <main id="reader" class="reader" tabindex="-1">
-    <div id="pages" class="pages"></div>
-    <div id="empty" class="empty">
-      <div class="empty-art">&#128218;</div>
-      <h2>NO VOLUME OPEN</h2>
-      <p>Open the library and upload a folder of JPGs to start reading.</p>
-      <button id="emptyUpload" class="btn btn-primary">UPLOAD A FOLDER</button>
-    </div>
-  </main>
 
   <!-- ── Progress rail ──────────────────────────────────────── -->
   <div id="rail" class="rail" hidden>
