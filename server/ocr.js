@@ -29,17 +29,19 @@ export const LANGUAGES = ["ja", "zh"];
 /**
  * Recognizer backends, and what each is good at.
  *
- * cnocr  the default for Chinese. Fast, but drops characters from a
- *        vertical column and reads the first character or two of a
- *        column that holds several.
- * paddle PP-OCRv5. Slower, but reads vertical columns exactly — on
- *        columns with known text it got 7/7 exact and 100% character
- *        accuracy, against CnOCR's 5/7 and 93.3%.
+ * cnocr  the default. Fast, and on real artwork it finds the text that
+ *        is actually there: on the real webtoon's vertical blocks it
+ *        read the single large glyph (福 / 茶 / 露) where PP-OCRv5 read
+ *        several characters out of the panel artwork around it.
+ * paddle PP-OCRv5. Slower, but reads CLEAN vertical columns exactly —
+ *        on columns with known text it got 7/7 exact and 100% character
+ *        accuracy, against CnOCR's 5/7 and 93.3%. Worth switching to for
+ *        pages whose text is well separated from the artwork.
  * manga-ocr  the default for Japanese.
  */
 export const RECOGNIZERS = [
-  { id: "cnocr", label: "CnOCR (fast)" },
-  { id: "paddle", label: "PP-OCRv5 (accurate, vertical)" },
+  { id: "cnocr", label: "CnOCR (fast, default)" },
+  { id: "paddle", label: "PP-OCRv5 (clean vertical columns)" },
 ];
 
 /**

@@ -55,29 +55,20 @@ The OCR sheet has a language picker and an engine picker.
 
 | engine | speed | vertical Chinese | horizontal Chinese |
 |---|---|---|---|
-| **CnOCR** | fast | drops characters from a column | 98.5% |
-| **PP-OCRv5** | slower | reads columns exactly | 99.1% |
+| **CnOCR** | fast | 5/7 exact on known columns | 98.5% |
+| **PP-OCRv5** | slower | 7/7 exact on known columns | 99.1% |
 
-Measured on vertical columns with known text
-(`mokuro/tests/compare_vertical_recognizers.py`):
-
-```
-cnocr    columns read exactly 5/7   character accuracy 93.3%
-paddle   columns read exactly 7/7   character accuracy 100.0%
-```
-
-PP-OCRv5 needed one change to work, and it is in mokuro: a vertical
-column has to be presented with the characters **side by side**, not
-stacked down the strip. mokuro stacks them, because that is how
-manga-ocr was trained. So a recogniser now declares which form it
-wants:
+PP-OCRv5 needs one change in mokuro to work: a vertical column has to
+be presented with the characters **side by side**, not stacked down the
+strip. mokuro stacks them, because that is how manga-ocr was trained.
+So a recognizer now declares which form it wants:
 
 ```python
 class PaddleRecognizer:
     vertical_orientation = "sideways"   # manga-ocr and cnocr use "stacked"
 ```
 
-The orientation A/B, on columns with known text
+The orientation A/B, on synthetic columns with known text
 (`mokuro/tests/paddle_orientation_fix.py`):
 
 ```
@@ -87,9 +78,50 @@ ppocr    stacked   0/7 exact,  13.3% characters
          sideways  7/7 exact, 100.0% characters
 ```
 
-On the real webtoon both engines return the same 25 blocks, because
-CnOCR was already correct there — its three "vertical" blocks are
-single large title-logo glyphs (福 / 茶 / 露), not columns.
+### On real artwork the two engines disagree
+
+On `预告_91dbdb` the two engines produce genuinely different text:
+
+```
+cnocr    23 blocks with text, 256 characters
+paddle   20 blocks with text, 229 characters
+22 of 25 blocks differ
+```
+
+And on the three vertical blocks — where the artwork holds ONE large
+glyph each (福 / 茶 / 露, confirmed by printing the artwork at native
+resolution inside the detector's own text mask):
+
+```
+cnocr    '福'      ''        '富'
+paddle   '一千二百'  '多年那'  '多年那么远|'
+```
+
+So on this volume **CnOCR is the better reader**: it finds the one real
+character in the panel, while PP-OCRv5 confidently reads several
+characters out of the panel artwork around it — the panel is 43% of the
+crop, and PP-OCRv5 is confident about the wrong answer.
+
+PP-OCRv5's advantage is on **clean** vertical columns, where the crop is
+mostly lettering. Its high confidence on a wrong answer is the risk, so
+leave the default on CnOCR for real pages.
+
+### A note on the recognition model
+
+The CnOCR model in use is `densenet_lite_136-gru` on the ONNX backend.
+An earlier OCR of this volume was run with `densenet_lite_246-gru_base`,
+which read the vertical blocks as `茶` and `露` — both correct. That
+model is no longer downloadable and is not in the local cache, so those
+two blocks now read `''` and `富`. The 246 model would be the better
+choice for large single-glyph lettering if it can be obtained.
+
+### The cache is per engine
+
+mokuro caches each page's OCR under `_ocr/<name>/`, keyed only on the
+image path. Without a per-engine directory, switching the recognizer
+replays the previous engine's text — the run appears to succeed and
+quietly produces the wrong text. That bug is what made the two engines
+look identical at first.
 
 ## Typography
 
