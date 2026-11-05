@@ -17,6 +17,7 @@ run() {
   fi
 }
 
+run "real webtoon text (no truncation)"  node test/real-text.verify.js
 run "text scale (matches artwork)"     node test/text-scale.verify.js
 run "text selection (tap + highlight)"  node test/touch-select.verify.js
 run "encoding (multipart filenames)"   node test/encoding.test.js

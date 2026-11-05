@@ -64,10 +64,21 @@ const state = {
   ocrData: null,
   visible: new Set(),
   observer: null,
-  words: [],       // word spans in the OCR layer, for hit-testing
+  chars: [],       // character spans in the OCR layer, for hit-testing
   tapTimer: null,
   tapPoint: null,
 };
+
+// Correction factor applied to mokuro's font_size.
+//
+// mokuro reports the ink height of the tallest glyph. A CJK glyph is drawn
+// inside an em box that is taller than its ink, so rendering at exactly
+// font_size makes the overlay text look noticeably larger than the
+// artwork. This factor trims it to match. 1.0 = no correction.
+//
+// Tuned against real Chinese webtoon pages: the overlay line box measured
+// ~1.29x the artwork's line height at 1.0, so ~0.78 lands them together.
+const OCR_FONT_FACTOR = 0.78;
 
 // ═══════════════════════════════════════════════════════════════
 // Library drawer
@@ -303,7 +314,7 @@ function setOcr(on) {
 }
 
 function clearOcr() {
-  state.words = [];
+  state.chars = [];
   for (const page of els.pages.children) {
     page.classList.remove("ocr-active");
     const layer = page.querySelector(".ocr-layer");
@@ -347,6 +358,10 @@ function applyOcr() {
       box.style.left = (x0 / W) * 100 + "%";
       box.style.top = (y0 / H) * 100 + "%";
       box.style.width = ((x1 - x0) / W) * 100 + "%";
+      // The height is only a hint for positioning — the text is allowed to
+      // overflow it (see .ocr-box in styles.css), because the detected box
+      // is the *ink* bounding box, which is often shorter than the text
+      // needs once punctuation and descenders are laid out.
       box.style.height = ((y1 - y0) / H) * 100 + "%";
 
       // Font size must scale with the image, not be a fixed pixel value.
@@ -364,7 +379,12 @@ function applyOcr() {
       // at any screen size and any max-width cap, with no magic numbers:
       //
       //     font-size = (font_size / image_width) * 100cqw
-      const ratio = (block.font_size || 16) / W;
+      //
+      // mokuro's font_size is the ink height of the tallest glyph. A CJK
+      // glyph is drawn inside an em box that is taller than its ink, so we
+      // apply a correction factor to land on the artwork's apparent size
+      // rather than overshooting it. OCR_FONT_FACTOR tunes this.
+      const ratio = ((block.font_size || 16) * OCR_FONT_FACTOR) / W;
       box.style.setProperty("--ocr-size", (ratio * 100).toFixed(4) + "cqw");
 
       if (block.vertical) {
@@ -372,12 +392,19 @@ function applyOcr() {
         box.style.textAlign = "start";
       }
 
-      const text = (block.lines || []).join("\n");
-      // Split into word spans so a tap can select a single word.
-      const spans = buildWordSpans(text);
-      box.append(...spans);
-      for (const s of spans) {
-        if (s.classList?.contains("ocr-word")) state.words.push(s);
+      // Each line of the block gets its own line element so multi-line
+      // blocks are not run together, and each character becomes a span so
+      // it can be selected on its own.
+      const lines = block.lines || [];
+      for (const lineText of lines) {
+        const line = document.createElement("div");
+        line.className = "ocr-line";
+        const spans = buildCharSpans(lineText);
+        line.append(...spans);
+        for (const s of spans) {
+          if (s.classList?.contains("ocr-char")) state.chars.push(s);
+        }
+        box.appendChild(line);
       }
       layer.appendChild(box);
     }
@@ -385,70 +412,64 @@ function applyOcr() {
 }
 
 /**
- * Build word-level spans for a line of text.
+ * Build character-level spans.
  *
- * Long-press-and-drag selection is finicky on mobile browsers, so we also
- * support tap-to-select-a-word: each word is its own span, and tapping it
- * highlights it and offers to copy.
+ * Every character is its own span, so a tap can select exactly one
+ * character. Chinese text has no spaces, so word-level spans would be
+ * useless there — character granularity is what the user asked for and
+ * it works for both scripts.
  */
-function buildWordSpans(text) {
+function buildCharSpans(text) {
   const spans = [];
-  // Keep the whitespace between words as text nodes so the layout and the
-  // copied text match the original.
-  const parts = text.split(/(\s+)/);
-  for (const part of parts) {
-    if (!part) continue;
-    if (/^\s+$/.test(part)) {
-      spans.push(document.createTextNode(part));
-      continue;
-    }
+  for (const ch of text) {
+    if (ch === "\n") continue;
     const span = document.createElement("span");
-    span.className = "ocr-word";
-    span.textContent = part;
+    span.className = "ocr-char";
+    span.textContent = ch;
     spans.push(span);
   }
   return spans;
 }
 
 /**
- * Find the word under a viewport point.
+ * Find the character under a viewport point.
  *
  * The OCR layer keeps `pointer-events: none` so that dragging over the text
  * still scrolls the reader — that is essential in a webtoon reader. So we
- * cannot rely on DOM event targets; we hit-test the word rects ourselves.
+ * cannot rely on DOM event targets; we hit-test the character rects ourselves.
  */
-function wordAtPoint(x, y) {
-  for (const word of state.words) {
-    const r = word.getBoundingClientRect();
+function charAtPoint(x, y) {
+  for (const ch of state.chars) {
+    const r = ch.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
     // Cheap vertical reject before the full bounds test.
     if (y < r.top - 2 || y > r.bottom + 2) continue;
-    if (x >= r.left && x <= r.right) return word;
+    if (x >= r.left && x <= r.right) return ch;
   }
   return null;
 }
 
 /**
- * Handle a tap on a word in the OCR layer.
+ * Handle a tap on a character in the OCR layer.
  */
-function handleWordTap(x, y) {
-  const word = wordAtPoint(x, y);
-  if (!word) return false;
+function handleCharTap(x, y) {
+  const ch = charAtPoint(x, y);
+  if (!ch) return false;
 
   // Clear any previous tap highlight.
-  for (const w of document.querySelectorAll(".ocr-word.tapped")) {
+  for (const w of document.querySelectorAll(".ocr-char.tapped")) {
     w.classList.remove("tapped");
   }
-  word.classList.add("tapped");
+  ch.classList.add("tapped");
 
   // Also select it natively, so the browser's own copy menu works.
   const range = document.createRange();
-  range.selectNodeContents(word);
+  range.selectNodeContents(ch);
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
 
-  showCopyHint(word);
+  showCopyHint(ch);
   return true;
 }
 
@@ -774,7 +795,7 @@ function onPointerUp(e) {
   // A long press is the browser's own selection gesture — leave it alone.
   if (dt > TAP_TIME) return;
 
-  handleWordTap(e.clientX, e.clientY);
+  handleCharTap(e.clientX, e.clientY);
 }
 
 els.reader.addEventListener("pointerdown", onPointerDown, { passive: true });

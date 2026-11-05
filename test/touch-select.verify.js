@@ -185,32 +185,32 @@ async function main() {
   // Touch selection is not emulatable in headless Chrome (it fails on a
   // plain <p> too), so the tap path is driven with mouse events, which
   // exercise the same pointerdown/pointerup handler.
-  const wordInfo = await ev(`(() => {
-    const w = document.querySelector('.ocr-word');
+  const charInfo = await ev(`(() => {
+    const w = document.querySelector('.ocr-char');
     if (!w) return null;
     const r = w.getBoundingClientRect();
     return { x: r.left + r.width/2, y: r.top + r.height/2, text: w.textContent,
              w: Math.round(r.width), h: Math.round(r.height) };
   })()`);
-  check("words are split into spans", !!wordInfo, JSON.stringify(wordInfo));
-  if (!wordInfo) { chrome.kill(); process.exit(1); }
+  check("characters are split into spans", !!charInfo, JSON.stringify(charInfo));
+  if (!charInfo) { chrome.kill(); process.exit(1); }
 
   await ev("window.getSelection().removeAllRanges()");
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: wordInfo.x, y: wordInfo.y, button: "left", clickCount: 1 }, sessionId);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: charInfo.x, y: charInfo.y, button: "left", clickCount: 1 }, sessionId);
   await sleep(60);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: wordInfo.x, y: wordInfo.y, button: "left", clickCount: 1 }, sessionId);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: charInfo.x, y: charInfo.y, button: "left", clickCount: 1 }, sessionId);
   await sleep(400);
 
   const tapped = await ev(`(() => {
-    const t = document.querySelector('.ocr-word.tapped');
+    const t = document.querySelector('.ocr-char.tapped');
     if (!t) return null;
     const cs = getComputedStyle(t);
     return { text: t.textContent, bg: cs.backgroundColor, color: cs.color,
              selected: window.getSelection().toString() };
   })()`);
-  check("tapping a word highlights it", !!tapped, JSON.stringify(tapped));
+  check("tapping a character highlights it", !!tapped, JSON.stringify(tapped));
   if (tapped) {
-    check("the tapped word is in the selection", tapped.selected.includes(tapped.text), JSON.stringify(tapped.selected));
+    check("the tapped character is in the selection", tapped.selected.includes(tapped.text), JSON.stringify(tapped.selected));
     // The highlight must be an opaque, visible colour.
     const bg = tapped.bg.match(/rgba?\(([^)]+)\)/);
     const parts = bg ? bg[1].split(",").map(Number) : [];

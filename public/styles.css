@@ -370,11 +370,33 @@ body { overflow: hidden; }
   font-size: var(--ocr-size, 16px);
   line-height: var(--ocr-lh, 1.2);
   letter-spacing: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: hidden;
+  /* The detected box is the INK bounding box, which is often shorter than
+     the text needs once punctuation and descenders are laid out. Allow the
+     text to overflow it so no sentence gets clipped — mokuro's own reader
+     does the same (white-space: nowrap + overflow: visible). */
+  white-space: nowrap;
+  overflow: visible;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Each detected line of a block. */
+.ocr-line {
+  display: block;
+  white-space: nowrap;
+}
+
+/* Character-level highlight for tap-to-select. Each character is its own
+   span so a tap can target exactly one character. */
+.ocr-char {
+  border-radius: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.ocr-char.tapped {
+  background: var(--accent);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
 }
 
 /* While the layer is on, the text is transparent so it sits invisibly on
@@ -400,19 +422,6 @@ body { overflow: hidden; }
 }
 /* Keep the highlight readable even if the text is scrolled partly out. */
 .ocr-box::selection { background: var(--accent); color: #fff; }
-
-/* Word-level highlight for tap-to-select. Each word is its own span so a
-   tap can target exactly one word instead of the whole line. */
-.ocr-word {
-  border-radius: 3px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-.ocr-word.tapped {
-  background: var(--accent);
-  color: #ffffff;
-  -webkit-text-fill-color: #ffffff;
-}
 
 /* A tap on a word shows a copy affordance. */
 .ocr-copy-hint {

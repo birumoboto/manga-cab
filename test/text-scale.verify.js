@@ -176,14 +176,22 @@ async function main() {
   console.log("");
   console.log("── overlay text size vs artwork ──");
 
+  // The overlay applies a correction factor to mokuro's ink height, so the
+  // rendered line box is expected to be a little SHORTER than the artwork's
+  // ink box. We check that it is in the same ballpark and definitely not
+  // oversized — the bug being guarded against was a ~1.3x overshoot.
+  const FONT_FACTOR = 0.78;
+
   const phone = await measure(412, 915, "phone");
   console.log("  phone  :", JSON.stringify(phone));
   check("overlay is scaled with the image", phone && phone.scale > 0 && phone.scale < 1, `scale=${phone?.scale}`);
   if (phone) {
-    // The rendered glyph height should be within 25% of the artwork's.
     const ratio = phone.textH / phone.artH;
-    check("overlay text height matches the artwork text height",
-      ratio > 0.75 && ratio < 1.35,
+    check("overlay text is not larger than the artwork text",
+      ratio <= 1.05,
+      `overlay=${phone.textH}px artwork=${phone.artH}px ratio=${ratio.toFixed(2)}`);
+    check("overlay text is in the same ballpark as the artwork",
+      ratio > 0.6 && ratio <= 1.05,
       `overlay=${phone.textH}px artwork=${phone.artH}px ratio=${ratio.toFixed(2)}`);
   }
 
@@ -191,8 +199,8 @@ async function main() {
   console.log("  desktop:", JSON.stringify(desktop));
   if (desktop) {
     const ratio = desktop.textH / desktop.artH;
-    check("overlay text height matches the artwork on desktop too",
-      ratio > 0.75 && ratio < 1.35,
+    check("overlay text is not larger than the artwork on desktop",
+      ratio <= 1.05,
       `overlay=${desktop.textH}px artwork=${desktop.artH}px ratio=${ratio.toFixed(2)}`);
     // The overlay LAYER must match the image exactly: same width, same
     // left edge. (The text box inside it is only as wide as its text.)
@@ -208,10 +216,37 @@ async function main() {
   console.log("  small  :", JSON.stringify(narrow));
   if (narrow) {
     const ratio = narrow.textH / narrow.artH;
-    check("overlay text height matches the artwork on a small phone",
-      ratio > 0.75 && ratio < 1.35,
+    check("overlay text is not larger than the artwork on a small phone",
+      ratio <= 1.05,
       `overlay=${narrow.textH}px artwork=${narrow.artH}px ratio=${ratio.toFixed(2)}`);
   }
+
+  // ── The whole sentence must be present and visible ──────────
+  const full = await ev(`(() => {
+    const box = document.querySelector('.ocr-box');
+    const chars = Array.from(box.querySelectorAll('.ocr-char')).map(c => c.textContent);
+    // The rendered width of the text vs the box's declared width.
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    const rects = Array.from(range.getClientRects());
+    const textW = rects.length ? Math.max(...rects.map(r => r.width)) : 0;
+    const cs = getComputedStyle(box);
+    return {
+      charCount: chars.length,
+      text: chars.join(''),
+      textW: Math.round(textW),
+      overflow: cs.overflow,
+      whiteSpace: cs.whiteSpace,
+      scrollW: box.scrollWidth,
+      clientW: box.clientWidth,
+    };
+  })()`);
+  check("every character is rendered as its own span", full.charCount === 4, `${full.charCount} chars: ${full.text}`);
+  check("the text is not clipped (overflow visible)", full.overflow === "visible", `overflow=${full.overflow}`);
+  check("the text does not wrap", full.whiteSpace === "nowrap", `white-space=${full.whiteSpace}`);
+  check("the rendered text is wider than the container (so it overflows rather than clipping)",
+    full.textW >= full.clientW,
+    `text=${full.textW}px box=${full.clientW}px`);
 
   // Clean up
   await fetch(`${BASE}/api/volumes/${setup}`, { method: "DELETE" });
