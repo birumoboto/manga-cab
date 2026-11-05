@@ -2,3 +2,9 @@ node_modules/
 data/
 *.log
 .DS_Store
+
+# Visual verification output — regenerate with scripts/zoom-lines.js
+shots/
+
+# Scratch files from the artwork diagnostics
+tmp_*.png
