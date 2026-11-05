@@ -48,6 +48,7 @@ const els = {
   uploadStatus: $("uploadStatus"),
   ocrToggle: $("ocrToggle"),
   textToggle: $("textToggle"),
+  textPanelBtn: $("textPanelBtn"),
   transcript: $("transcript"),
   transcriptClose: $("transcriptClose"),
   transcriptBody: $("transcriptBody"),
@@ -915,6 +916,11 @@ function renderTranscript() {
 }
 
 els.textToggle.addEventListener("click", () => toggleTranscript());
+els.textPanelBtn.addEventListener("click", () => {
+  // Close the library first so the panel is not hidden behind the drawer.
+  closeLibrary();
+  toggleTranscript(true);
+});
 els.transcriptClose.addEventListener("click", () => toggleTranscript(false));
 
 // Tapping a character in the transcript highlights it, the same way the

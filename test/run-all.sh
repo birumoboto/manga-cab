@@ -17,6 +17,8 @@ run() {
   fi
 }
 
+run "cache policy (no stale shell)"    node test/cache.verify.js
+run "transcript button (4 devices)"       node test/transcript-visible.verify.js
 run "ocr transcript (one section per line)" node test/transcript.verify.js
 run "overlay lines (one section per line)"  node test/overlay-lines.verify.js
 run "real webtoon text (no truncation)"  node test/real-text.verify.js

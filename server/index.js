@@ -34,7 +34,29 @@ const store = new VolumeStore(DATA_DIR);
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(PUBLIC_DIR, { maxAge: "1h" }));
+
+// Static assets.
+//
+// The HTML, CSS and JS are the app shell and change with every deploy.
+// Caching them means a phone keeps serving a stale shell — the user
+// reloads, sees the old UI, and concludes the new feature "does not
+// exist". Page IMAGES are immutable (their filename never changes) and
+// are cached separately, further down, with a one-year TTL.
+//
+// So: the shell is always revalidated, the artwork stays cached.
+app.use(express.static(PUBLIC_DIR, {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    const name = path.basename(filePath);
+    if (/\.(html|css|js|json|svg|ico)$/i.test(name)) {
+      // No caching for the shell: always ask the server.
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=3600");
+    }
+  },
+}));
 
 // ── Upload handling ────────────────────────────────────────────
 const upload = multer({
