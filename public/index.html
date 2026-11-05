@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>MANGA.CAB &mdash; Webtoon Reader</title>
+<!-- Relative asset paths so the app works mounted at any prefix
+     (e.g. /manga on a shared Tailscale Serve hostname). -->
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="favicon.ico">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Top bar ────────────────────────────────────────────── -->
+  <header class="topbar">
+    <button id="libraryBtn" class="icon-btn" aria-label="Open library" title="Library">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path d="M4 4h4v16H4zM10 4h4v16h-4zM16 4h4v16h-4z"/>
+      </svg>
+    </button>
+    <div class="title-wrap">
+      <h1 id="volumeTitle" class="volume-title">MANGA.CAB</h1>
+      <span id="volumeMeta" class="volume-meta">webtoon reader</span>
+    </div>
+    <div class="topbar-right">
+      <button id="ocrToggle" class="icon-btn" aria-pressed="false" aria-label="Toggle OCR text layer" title="OCR text layer">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M4 5h16v2H4zM4 11h16v2H4zM4 17h10v2H4z"/>
+        </svg>
+      </button>
+      <button id="fsBtn" class="icon-btn" aria-label="Toggle fullscreen" title="Fullscreen">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M4 4h6v2H6v4H4zM20 4v6h-2V6h-4V4zM4 20v-6h2v4h4v2zM20 20h-6v-2h4v-4h2z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Library drawer ─────────────────────────────────────── -->
+  <aside id="library" class="library" aria-label="Library">
+    <div class="library-head">
+      <h2>LIBRARY</h2>
+      <button id="libraryClose" class="icon-btn small" aria-label="Close library">&times;</button>
+    </div>
+
+    <div class="library-body">
+      <section class="lib-section">
+        <h3>UPLOAD</h3>
+        <div id="dropZone" class="dropzone" tabindex="0" role="button"
+             aria-label="Upload a folder of images or a zip archive">
+          <div class="dz-icon">&#128193;</div>
+          <p class="dz-main">Drop a folder of JPGs here</p>
+          <p class="dz-sub">or click to choose &middot; .zip / .cbz also OK</p>
+        </div>
+        <input id="fileInput" type="file" multiple accept="image/*,.zip,.cbz" hidden>
+        <input id="folderInput" type="file" multiple webkitdirectory hidden>
+        <div class="btn-row">
+          <button id="pickFiles" class="btn">CHOOSE FILES</button>
+          <button id="pickFolder" class="btn">CHOOSE FOLDER</button>
+        </div>
+        <label class="title-field">
+          <span>TITLE</span>
+          <input id="titleInput" type="text" placeholder="(auto from folder name)" autocomplete="off">
+        </label>
+        <div id="uploadStatus" class="upload-status" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="lib-section">
+        <h3>OCR TEXT LAYER</h3>
+        <p class="lib-hint">Attach a <code>.mokuro</code> file (from mokuro) to make
+          the pages&rsquo; text selectable. Toggle it with the <strong>O</strong> key
+          or the button in the top bar.</p>
+        <input id="mokuroInput" type="file" accept=".mokuro,application/json" hidden>
+        <button id="pickMokuro" class="btn">ATTACH .MOKURO</button>
+      </section>
+
+      <section class="lib-section">
+        <h3>VOLUMES</h3>
+        <ul id="volumeList" class="volume-list"></ul>
+      </section>
+    </div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <!-- ── Reader ─────────────────────────────────────────────── -->
+  <main id="reader" class="reader" tabindex="-1">
+    <div id="pages" class="pages"></div>
+    <div id="empty" class="empty">
+      <div class="empty-art">&#128218;</div>
+      <h2>NO VOLUME OPEN</h2>
+      <p>Open the library and upload a folder of JPGs to start reading.</p>
+      <button id="emptyUpload" class="btn btn-primary">UPLOAD A FOLDER</button>
+    </div>
+  </main>
+
+  <!-- ── Progress rail ──────────────────────────────────────── -->
+  <div id="rail" class="rail" hidden>
+    <div id="railFill" class="rail-fill"></div>
+  </div>
+
+  <div id="pageIndicator" class="page-indicator" hidden></div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
