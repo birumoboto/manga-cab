@@ -14,3 +14,6 @@ com.bing.mangacab.plist
 
 # Screenshot output from test/screenshot.js
 shot-*.png
+
+# Local working brief for the typography fix
+HANDOFF.md
