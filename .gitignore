@@ -17,3 +17,7 @@ shot-*.png
 
 # Local working brief for the typography fix
 HANDOFF.md
+
+# The typography diagnostics (scripts/diag/) — local tools, not part of the app
+scripts/diag/
+.hermes-fix-prompt.md

@@ -727,15 +727,28 @@ function renderOcrPage(wrap, page, pageIndex) {
           // condenses them visually.
           //
           // The transform scales the box along the text's own axis, so
-          // that axis is divided by the condense factor — after the
-          // transform the box renders at exactly the quad's size. The
-          // CROSS axis is not scaled, so it is set to the quad directly.
+          // The line's layout box.
+          //
+          // The transform scales ONE axis, so each axis of the box has
+          // to be sized for the axis the transform does NOT touch:
+          //
+          //   along axis — divided by the condense factor, so that
+          //                after the transform it renders at the
+          //                artwork's advance.
+          //   cross axis — the GLYPH'S EM BOX, which is the font size.
+          //
+          // The cross axis used to be the QUAD, but the quad is the
+          // detector's guess and is taller than the lettering; the em
+          // box is taller than the ink. The two compound, the line
+          // overflows its box vertically, and the text looks stretched.
+          const emBoxH = (fontSize / bh) * 100;   // % of the block's height
+          const emBoxW = (fontSize / bw) * 100;   // % of the block's width
           if (vertical) {
-            line.style.width = (quadW / bw) * 100 + "%";
+            line.style.width = emBoxW + "%";
             line.style.height = (quadH / condense / bh) * 100 + "%";
           } else {
             line.style.width = (quadW / condense / bw) * 100 + "%";
-            line.style.height = (quadH / bh) * 100 + "%";
+            line.style.height = emBoxH + "%";
           }
 
           // ── Place the text on the artwork's lettering ──────────
@@ -776,9 +789,17 @@ function renderOcrPage(wrap, page, pageIndex) {
 
             // The cross axis: for horizontal text the lettering's top
             // edge is what matters; for vertical text its left edge.
+            //
+            // But the ALONG axis matters too. For horizontal text the
+            // along axis is X, and the line is placed at the ink's
+            // left edge. For VERTICAL text the along axis is Y — down
+            // the column — and the line's top has to be moved to the
+            // ink's top, or the column starts at the top of the speech
+            // bubble instead of at the first character.
             if (vertical) {
               line.style.left = ((inkX - bearX - bx0) / bw) * 100 + "%";
               line.style.width = (glyphBox / bw) * 100 + "%";
+              line.style.top = ((inkY - by0) / bh) * 100 + "%";
             } else {
               line.style.left = ((inkX - bearX - bx0) / bw) * 100 + "%";
               line.style.top = ((inkY - bearY - by0) / bh) * 100 + "%";

@@ -47,53 +47,111 @@ const BROWSER = {
  * browser substitutes a different font for CJK. Measuring is cheap
  * (one small canvas) and makes the calibration self-maintaining.
  *
- * Returns { advance, inkHeight, inkWidth } in em.
+ * The ink is measured over MANY glyphs and reduced to a MEDIAN, not
+ * sampled from one: CJK glyphs fill different fractions of their em
+ * box, so a single-glyph sample is wrong by a per-glyph amount.
+ *
+ * Returns { advance, inkHeight, inkWidth } in em, plus the side
+ * bearings that position the ink inside the em box.
  */
 function measureFontMetrics(fontStack) {
   const stack = fontStack || getComputedStyle(document.body).fontFamily;
-  const sample = "因为这里离你家很远我想回家";
 
-  // The advance per character.
+  // ── The advance ─────────────────────────────────────────────
+  //
+  // Measured on a run of CJK, NOT on the whole string: a string that
+  // mixes CJK with punctuation or Latin has a different average
+  // advance per character, and the overlay's text is CJK.
+  //
+  // The advance is also the width the browser lays the glyphs out at,
+  // so it has to be the font's real per-character advance.
   const c = document.createElement("canvas");
   c.width = 8;
   c.height = 8;
   const ctx = c.getContext("2d");
   ctx.font = "100px " + stack;
-  const advance = ctx.measureText(sample).width / sample.length / 100;
+  const advanceSample = "因为这里离你家很远我想回家";
+  const advance = ctx.measureText(advanceSample).width / advanceSample.length / 100;
 
-  // The ink of a single glyph, at a big size so the pixel grid does
-  // not distort the measurement.
-  const size = 100;
-  const pad = 20;
+  // ── The ink ─────────────────────────────────────────────────
+  //
+  // Measured over MANY glyphs, not one.
+  //
+  // Different CJK glyphs fill different fractions of their em box: a
+  // simple glyph like 一 is a thin stroke, a full glyph like 面 fills
+  // nearly the whole box. Sampling a single character (this used to
+  // sample 因) makes the calibration wrong by a per-glyph amount,
+  // which is exactly the "the ratio isn't right" that was reported.
+  //
+  // So: rasterise each glyph on its own, and take the MEDIAN of the
+  // ink heights and widths. The median is the right statistic — the
+  // artwork's lettering is full-bodied glyphs, and the median is what
+  // a typical glyph's ink looks like.
+  const size = 160;
+  const pad = size;
   const gc = document.createElement("canvas");
   gc.width = size + pad * 2;
   gc.height = size + pad * 2;
-  const gx = gc.getContext("2d");
-  gx.fillStyle = "#fff";
-  gx.fillRect(0, 0, gc.width, gc.height);
-  gx.fillStyle = "#000";
-  gx.font = size + "px " + stack;
-  gx.textBaseline = "alphabetic";
-  gx.fillText(sample[0], pad, pad + 80);
+  const gx = gc.getContext("2d", { willReadFrequently: true });
 
-  const d = gx.getImageData(0, 0, gc.width, gc.height).data;
-  let x0 = -1, x1 = -1, y0 = -1, y1 = -1;
-  for (let y = 0; y < gc.height; y++) {
-    for (let x = 0; x < gc.width; x++) {
-      if (d[(y * gc.width + x) * 4] < 128) {
-        if (x0 < 0 || x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y0 < 0 || y < y0) y0 = y;
-        if (y > y1) y1 = y;
+  const glyphs = "因为这里离你家很远我想回家包子漫畫福露茶面你回不去了上线即更每周四同八艾利温暖孤独少女的心一二三四五六七八九十的了在是有和就不人都上也很到说去我会着没看好自己这没那什么怎么这样因为所以但如果可以";
+
+  const heights = [];
+  const widths = [];
+  const lefts = [];
+  const tops = [];
+  const rights = [];
+  const bottoms = [];
+
+  // The baseline, and the glyph's ink relative to it. The em box is
+  // measured from the BASELINE, not from the canvas's edge, so the
+  // bearings are the distance the ink sits from the em box's edges.
+  const baseline = Math.round(size * 1.25);
+
+  for (const ch of glyphs) {
+    gx.fillStyle = "#fff";
+    gx.fillRect(0, 0, gc.width, gc.height);
+    gx.fillStyle = "#000";
+    gx.font = size + "px " + stack;
+    gx.textBaseline = "alphabetic";
+    gx.fillText(ch, pad, baseline);
+
+    const d = gx.getImageData(0, 0, gc.width, gc.height).data;
+    let x0 = -1, x1 = -1, y0 = -1, y1 = -1;
+    for (let i = 0, p = 0; p < d.length; i += 4, p++) {
+      if (d[i] < 128) {
+        const px = p % gc.width, py = (p - px) / gc.width;
+        if (x0 < 0 || px < x0) x0 = px;
+        if (px > x1) x1 = px;
+        if (y0 < 0 || py < y0) y0 = py;
+        if (py > y1) y1 = py;
       }
     }
+    if (x0 < 0) continue;
+    heights.push((y1 - y0 + 1) / size);
+    widths.push((x1 - x0 + 1) / size);
+    // The bearings, measured from the glyph's own origin:
+    //   the origin is at (pad, baseline), the em box is `size` wide
+    //   and `size` tall, its top at baseline - ascent.
+    lefts.push((x0 - pad) / size);
+    tops.push((y0 - (baseline - size)) / size);
+    rights.push((pad + size - x1) / size);
+    bottoms.push((baseline - y1) / size);
   }
-  if (x0 < 0) return { advance, inkHeight: BROWSER.inkHeight, inkWidth: BROWSER.inkWidth };
+
+  if (!heights.length) {
+    return { advance, inkHeight: BROWSER.inkHeight, inkWidth: BROWSER.inkWidth };
+  }
+
+  const med = (a) => {
+    const s = a.slice().sort((x, y) => x - y);
+    return s[s.length >> 1];
+  };
 
   return {
     advance,
-    inkHeight: (y1 - y0 + 1) / size,
-    inkWidth: (x1 - x0 + 1) / size,
+    inkHeight: med(heights),
+    inkWidth: med(widths),
     // Where the ink sits inside the em box, in em. The overlay's
     // characters are positioned by their em box, so the em box has to
     // be moved by these to put the INK on the artwork's lettering.
@@ -101,10 +159,10 @@ function measureFontMetrics(fontStack) {
     // In vertical writing the roles swap: the glyph's TOP side bearing
     // becomes the RIGHT one, and the LEFT bearing is the one that
     // shows on the cross axis. Both are recorded.
-    inkOffsetX: x0 / size,
-    inkOffsetY: y0 / size,
-    inkOffsetXRight: (size - x1) / size,
-    inkOffsetYBottom: (size - y1) / size,
+    inkOffsetX: med(lefts),
+    inkOffsetY: med(tops),
+    inkOffsetXRight: med(rights),
+    inkOffsetYBottom: med(bottoms),
   };
 }
 
@@ -180,6 +238,20 @@ function median(values, len) {
  * `quad` is [[x,y], ...] in image pixels; `vertical` says which way the
  * text runs. Returns null when there is no ink to measure.
  */
+/**
+ * The value at a fraction of the way up a sorted copy of `arr`.
+ *
+ * Used as a NOISE FLOOR: the background's own level in a profile.
+ */
+function percentile(arr, frac) {
+  const s = [];
+  for (let i = 0; i < arr.length; i++) s.push(arr[i]);
+  s.sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const i = Math.min(s.length - 1, Math.max(0, Math.round((s.length - 1) * frac)));
+  return s[i];
+}
+
 function measureInk(img, quad, vertical) {
   const xs = quad.map((p) => p[0]);
   const ys = quad.map((p) => p[1]);
@@ -243,20 +315,95 @@ function measureInk(img, quad, vertical) {
   for (let i = 0; i < alongLen; i++) if (alongProfile[i] > maxAlong) maxAlong = alongProfile[i];
   if (maxCross <= 0 || maxAlong <= 0) return null;
 
-  // The text's extent along the cross axis — this is the GLYPH HEIGHT.
-  const cThr = Math.max(0.6, maxCross * 0.12);
+  // ── The LETTERING's band on the cross axis — this is the GLYPH
+  //    HEIGHT (horizontal) or the GLYPH WIDTH (vertical).
+  //
+  // The profile compares each row against its own median, so it does
+  // not care whether the lettering is light on dark or dark on light.
+  //
+  // But on a panel with a TEXTURED background the profile never falls
+  // back to the background's own level — every row deviates a little —
+  // so a plain threshold swallows the WHOLE QUAD. The "ink" then comes
+  // out the size of the speech bubble rather than the size of the
+  // letters, and the overlay is drawn about a third too big. That is
+  // the "stretched vertically" the reader sees.
+  //
+  // So the threshold is set against a NOISE FLOOR — the background's
+  // own level, taken as the profile's low quartile — and the lettering
+  // is the LONGEST RUN that stands clearly above it. The run is used
+  // rather than the peak: the lettering is a band, so it is the
+  // longest stretch of "inked" rows, and on a textured panel the peak
+  // can be a texture spike instead.
+  const crossNoise = percentile(crossProfile, 0.25);
+  const crossSpan = maxCross - crossNoise;
   let cLo = -1, cHi = -1;
-  for (let i = 0; i < crossLen; i++) {
-    if (crossProfile[i] > cThr) {
-      if (cLo < 0) cLo = i;
-      cHi = i;
+  if (crossSpan > 0 && maxCross > crossNoise * 1.8) {
+    const strong = crossNoise + crossSpan * 0.35;
+    // Find the runs above the strong threshold, then BRIDGE the small
+    // gaps between them. A glyph's middle bar can dip below the
+    // threshold and split one letterform into two runs; without the
+    // bridge the band comes out too short and the text is drawn small.
+    const bridge = Math.max(1, Math.round(crossLen * 0.06));
+    const runs = [];
+    let start = -1;
+    let gapStart = -1;
+    for (let i = 0; i <= crossLen; i++) {
+      const on = i < crossLen && crossProfile[i] >= strong;
+      if (on) {
+        if (start < 0) start = i;
+        gapStart = -1;
+      } else if (start >= 0) {
+        if (gapStart < 0) gapStart = i;
+        if (i - gapStart > bridge) {
+          runs.push([start, gapStart - 1]);
+          start = -1;
+          gapStart = -1;
+        }
+      }
+    }
+    if (start >= 0) runs.push([start, crossLen - 1]);
+    if (runs.length) {
+      // The longest run — the lettering is a band, so it is the longest
+      // stretch of "inked" rows. On a textured panel the PEAK can be a
+      // texture spike instead, which is why the run is used.
+      let best = runs[0];
+      for (const r of runs) if (r[1] - r[0] > best[1] - best[0]) best = r;
+      // Extend into the glyph's own soft edges, but stop at the panel.
+      const weak = crossNoise + crossSpan * 0.15;
+      const limit = Math.max(4, Math.round(crossLen * 0.25));
+      let k = 0;
+      while (k < limit && best[0] > 0 && crossProfile[best[0] - 1] > weak) { best[0]--; k++; }
+      k = 0;
+      while (k < limit && best[1] < crossLen - 1 && crossProfile[best[1] + 1] > weak) { best[1]++; k++; }
+      cLo = best[0];
+      cHi = best[1];
+    }
+  }
+  if (cLo < 0) {
+    // No clear lettering against the background — fall back to the
+    // plain threshold.
+    const cThr = Math.max(0.6, maxCross * 0.12);
+    for (let i = 0; i < crossLen; i++) {
+      if (crossProfile[i] > cThr) {
+        if (cLo < 0) cLo = i;
+        cHi = i;
+      }
     }
   }
   if (cLo < 0) return null;
   const crossExtent = cHi - cLo + 1;
 
   // Segment the characters along the text's own axis.
-  const aThr = Math.max(0.6, maxAlong * 0.10);
+  //
+  // The same noise floor applies: a textured panel makes the along
+  // profile noisy too, so the runs are thresholded against the
+  // background's own level and only the runs that stand clearly above
+  // it are kept.
+  const alongNoise = percentile(alongProfile, 0.25);
+  const alongSpan = maxAlong - alongNoise;
+  const aThr = (alongSpan > 0 && maxAlong > alongNoise * 1.8)
+    ? alongNoise + alongSpan * 0.30
+    : Math.max(0.6, maxAlong * 0.10);
   const runs = [];
   let start = -1;
   for (let i = 0; i < alongLen; i++) {
