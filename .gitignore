@@ -8,3 +8,6 @@ shots/
 
 # Scratch files from the artwork diagnostics
 tmp_*.png
+
+# The launch agent is machine-specific — see com.bing.mangacab.plist.tmpl
+com.bing.mangacab.plist

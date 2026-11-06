@@ -5,10 +5,11 @@
   <key>Label</key>
   <string>com.bing.mangacab</string>
 
+  <!-- Replace __REPO__ with the absolute path to this checkout. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/bing/manga-reader/start.sh</string>
+    <string>__REPO__/start.sh</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -18,7 +19,7 @@
   <true/>
 
   <key>WorkingDirectory</key>
-  <string>/Users/bing/manga-reader</string>
+  <string>__REPO__</string>
 
   <key>StandardOutPath</key>
   <string>/tmp/mangacab-launch.log</string>

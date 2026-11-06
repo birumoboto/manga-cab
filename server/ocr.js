@@ -19,7 +19,10 @@ import path from "path";
 import os from "os";
 import { spawn } from "child_process";
 
-const MOKURO_DIR = process.env.MOKURO_DIR || "/Users/bing/mokuro";
+// The mokuro checkout and its Python venv. Both are overridable so the
+// reader can run from a checkout anywhere.
+const HOME = process.env.HOME || os.homedir();
+const MOKURO_DIR = process.env.MOKURO_DIR || `${HOME}/mokuro`;
 const MOKURO_PYTHON = path.join(MOKURO_DIR, ".venv", "bin", "python");
 const OCR_TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS || 30 * 60 * 1000);
 

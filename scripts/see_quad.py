@@ -20,7 +20,10 @@ import sys
 import numpy as np
 from PIL import Image
 
-BASE = "/Users/bing/manga-reader/data/_volumes"
+BASE = os.environ.get(
+    "MANGA_VOLUMES",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "_volumes"),
+)
 
 
 def ink_mask(crop: np.ndarray) -> np.ndarray:

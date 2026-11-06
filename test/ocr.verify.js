@@ -15,7 +15,9 @@ import os from "os";
 import path from "path";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:8790";
-const MOKURO_PY = process.env.MOKURO_PYTHON || "/Users/bing/mokuro/.venv/bin/python";
+const HOME = process.env.HOME || process.env.USERPROFILE;
+const MOKURO_DIR = process.env.MOKURO_DIR || `${HOME}/mokuro`;
+const MOKURO_PY = process.env.MOKURO_PYTHON || `${MOKURO_DIR}/.venv/bin/python`;
 
 let pass = 0;
 let fail = 0;
@@ -34,7 +36,7 @@ async function main() {
   // ── Build a small test volume with readable Chinese text ─────
   // We use the synthetic corpus if it exists, else generate nothing and
   // bail out — the point is to exercise the real pipeline.
-  const corpus = "/Users/bing/mokuro/tests/data/chinese";
+  const corpus = `${MOKURO_DIR}/tests/data/chinese`;
   if (!fs.existsSync(corpus)) {
     console.log("SKIP  synthetic corpus missing — run mokuro's make_chinese_corpus first");
     return 0;

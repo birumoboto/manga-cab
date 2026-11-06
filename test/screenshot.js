@@ -12,7 +12,7 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const HOST = "bings-macbook-pro-2.tailb92b8e.ts.net";
 const IP = "100.126.189.38";
 const URL_BASE = `https://${HOST}/manga/`;
-const OUT = "/Users/bing/manga-reader";
+const OUT = process.env.SHOT_DIR || process.cwd();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

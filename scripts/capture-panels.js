@@ -26,7 +26,8 @@ import { WebSocket } from "ws";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const BASE = "http://127.0.0.1:8790";
 const VOLUME = process.argv[2] || "mw383dg7-5c0ce6cb";
-const OUT = process.argv[3] || "/Users/bing/manga-reader/shots/panels";
+const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const OUT = process.argv[3] || path.join(REPO, "shots", "panels");
 const DSF = 2; // device scale factor
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

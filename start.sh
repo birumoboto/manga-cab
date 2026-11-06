@@ -9,14 +9,26 @@
 
 set -uo pipefail
 
-NODE="/opt/homebrew/opt/node@22/bin/node"
-DIR="/Users/bing/manga-reader"
-PORT=8790
-LOG="/tmp/manga-reader.log"
-
-if [ ! -x "$NODE" ]; then
-  NODE="$(command -v node)"
+# launchd gives us no PATH, so fall back to the usual Homebrew locations
+# before giving up on `command -v`.
+NODE="${NODE:-}"
+if [ -z "$NODE" ]; then
+  for candidate in /opt/homebrew/opt/node@22/bin/node /opt/homebrew/bin/node \
+                   /usr/local/bin/node /usr/bin/node; do
+    [ -x "$candidate" ] && NODE="$candidate" && break
+  done
 fi
+if [ -z "$NODE" ]; then
+  NODE="$(command -v node 2>/dev/null)"
+fi
+if [ -z "$NODE" ]; then
+  echo "manga-reader: no node binary found" >&2
+  exit 1
+fi
+
+DIR="${DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+PORT="${PORT:-8790}"
+LOG="${LOG:-/tmp/manga-reader.log}"
 
 cd "$DIR" || exit 1
 
