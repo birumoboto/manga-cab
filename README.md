@@ -12,6 +12,27 @@ moment you tap it.
 **Everything runs on your own machine.** No cloud OCR, no API key, no
 account. The OCR model never sees your images.
 
+## What this is, and what the engine is
+
+**This repo is the reader** — a Node/Express web app. It uploads the
+pages, runs the OCR, and draws the text back over the artwork.
+
+**The OCR engine is a separate project**,
+[mokuro-zh](https://github.com/birumoboto/mokuro-zh) — a Python package
+that detects the text blocks and reads the characters. This app calls it
+as a subprocess; it does not contain it.
+
+```
+  manga-cab  (Node/Express, this repo — the web reader)
+      │
+      │  spawns the engine as a subprocess
+      ▼
+  mokuro-zh  (Python, the OCR engine)
+      │
+      ▼
+  CnOCR  or  PP-OCRv5
+```
+
 ## Quick start
 
 ```bash
