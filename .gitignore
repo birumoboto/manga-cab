@@ -11,3 +11,6 @@ tmp_*.png
 
 # The launch agent is machine-specific — see com.bing.mangacab.plist.tmpl
 com.bing.mangacab.plist
+
+# Screenshot output from test/screenshot.js
+shot-*.png
